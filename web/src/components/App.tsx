@@ -3,17 +3,10 @@ import '../styles/index.css';
 import { TransactionLoader } from './TransactionLoader';
 import { BlockVisualizer } from './BlockVisualizer';
 import { TransactionComparison } from './TransactionComparison';
-import { analyzeBlock, getErrorEli5 } from '../utils/api';
+import { analyzeBlock, analyzeBlockUpload, getErrorEli5 } from '../utils/api';
 
 type Tab = 'tx' | 'block' | 'compare';
 type Theme = 'dark' | 'light' | 'system';
-
-/** Read a File and return its contents as a lowercase hex string. */
-async function fileToHex(file: File): Promise<string> {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 export default function App() {
     const [tab, setTab] = useState<Tab>('tx');
@@ -39,7 +32,10 @@ export default function App() {
     const themeIcon = theme === 'dark' ? '🌙' : theme === 'light' ? '☀️' : '🖥️';
     const themeLabel = theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'System';
 
-    // Block mode state
+    // Block mode state — store File objects (binary upload) OR small hex strings
+    const [blkFile, setBlkFile] = useState<File | null>(null);
+    const [revFile, setRevFile] = useState<File | null>(null);
+    const [xorFile, setXorFile] = useState<File | null>(null);
     const [blkHex, setBlkHex] = useState('');
     const [revHex, setRevHex] = useState('');
     const [xorHex, setXorHex] = useState('0000000000000000');
@@ -52,24 +48,19 @@ export default function App() {
     const revRef = useRef<HTMLInputElement>(null);
     const xorRef = useRef<HTMLInputElement>(null);
 
-    const handleFileUpload = async (
-        file: File,
-        setter: React.Dispatch<React.SetStateAction<string>>,
-    ) => {
-        try {
-            const hex = await fileToHex(file);
-            setter(hex);
-        } catch (e: any) {
-            setBlockError(`File read error: ${e.message}`);
-        }
-    };
-
     const runBlockAnalysis = async () => {
         setBlockError('');
         setBlockResult(null);
         setBlockLoading(true);
         try {
-            const data = await analyzeBlock(blkHex.trim(), revHex.trim(), xorHex.trim() || '0000000000000000');
+            let data: any;
+            if (blkFile) {
+                // Binary file upload path — no hex conversion, no browser crash
+                data = await analyzeBlockUpload(blkFile, revFile, xorFile);
+            } else {
+                // Small hex string path (paste mode)
+                data = await analyzeBlock(blkHex.trim(), revHex.trim(), xorHex.trim() || '0000000000000000');
+            }
             setBlockResult(data);
         } catch (e: any) {
             setBlockError(e.message || String(e));
@@ -78,51 +69,7 @@ export default function App() {
         }
     };
 
-    const FileUploadRow = ({
-        label, hint, value, setter, inputRef, accept = '.dat',
-    }: {
-        label: string; hint: string; value: string;
-        setter: React.Dispatch<React.SetStateAction<string>>;
-        inputRef: React.RefObject<HTMLInputElement>;
-        accept?: string;
-    }) => (
-        <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <label style={{ fontSize: 12, color: 'var(--text-soft)', fontWeight: 500 }}>
-                    {label} <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{hint}</span>
-                </label>
-                <button
-                    className="btn btn-ghost"
-                    style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }}
-                    onClick={() => inputRef.current?.click()}
-                >
-                    📂 Upload {label.split(' ')[0]}
-                </button>
-                <input
-                    ref={inputRef}
-                    type="file"
-                    accept={accept}
-                    style={{ display: 'none' }}
-                    onChange={e => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFileUpload(f, setter);
-                    }}
-                />
-                {value && (
-                    <span style={{ fontSize: 11, color: 'var(--green)' }}>
-                        ✓ {(value.length / 2).toLocaleString()} bytes loaded
-                    </span>
-                )}
-            </div>
-            <textarea
-                rows={2}
-                placeholder={`Paste hex or upload file above…`}
-                value={value}
-                onChange={e => setter(e.target.value)}
-                style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-            />
-        </div>
-    );
+    const hasBlockInput = blkFile !== null || blkHex.trim().length > 0;
 
     return (
         <div className="app-layout">
@@ -177,61 +124,79 @@ export default function App() {
                                 <strong>What are these files?</strong> <code>blk*.dat</code> contains raw block data (the ledger pages). <code>rev*.dat</code> is an undo file that helps us find where each input came from. <code>xor.dat</code> holds a key to decode blocks that Bitcoin Core obfuscates on disk.
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                <FileUploadRow
-                                    label="blk*.dat"
-                                    hint="(block file — may contain multiple blocks)"
-                                    value={blkHex}
-                                    setter={setBlkHex}
-                                    inputRef={blkRef}
-                                />
-                                <FileUploadRow
-                                    label="rev*.dat"
-                                    hint="(undo file for prevouts, optional)"
-                                    value={revHex}
-                                    setter={setRevHex}
-                                    inputRef={revRef}
-                                />
+                                {/* ── blk*.dat ── */}
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                        <label style={{ fontSize: 12, color: 'var(--text-soft)', fontWeight: 500 }}>
+                                            blk*.dat <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>(block file — may contain multiple blocks)</span>
+                                        </label>
+                                        <button className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }}
+                                            onClick={() => blkRef.current?.click()}>
+                                            📂 Upload blk*.dat
+                                        </button>
+                                        <input ref={blkRef} type="file" accept=".dat" style={{ display: 'none' }}
+                                            onChange={e => { const f = e.target.files?.[0]; if (f) { setBlkFile(f); setBlkHex(''); } }} />
+                                        {blkFile && <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ {blkFile.name} ({(blkFile.size / 1024 / 1024).toFixed(1)} MB)</span>}
+                                    </div>
+                                    {!blkFile && (
+                                        <textarea rows={2} placeholder="…or paste raw block hex here (small blocks only)"
+                                            value={blkHex} onChange={e => setBlkHex(e.target.value)}
+                                            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }} />
+                                    )}
+                                </div>
+                                {/* ── rev*.dat ── */}
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                        <label style={{ fontSize: 12, color: 'var(--text-soft)', fontWeight: 500 }}>
+                                            rev*.dat <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>(undo file for prevouts, optional)</span>
+                                        </label>
+                                        <button className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }}
+                                            onClick={() => revRef.current?.click()}>
+                                            📂 Upload rev*.dat
+                                        </button>
+                                        <input ref={revRef} type="file" accept=".dat" style={{ display: 'none' }}
+                                            onChange={e => { const f = e.target.files?.[0]; if (f) { setRevFile(f); setRevHex(''); } }} />
+                                        {revFile && <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ {revFile.name} ({(revFile.size / 1024 / 1024).toFixed(1)} MB)</span>}
+                                    </div>
+                                    {!revFile && (
+                                        <textarea rows={2} placeholder="…or paste rev hex here (optional)"
+                                            value={revHex} onChange={e => setRevHex(e.target.value)}
+                                            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }} />
+                                    )}
+                                </div>
+                                {/* ── xor.dat ── */}
                                 <div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                                         <label style={{ fontSize: 12, color: 'var(--text-soft)', fontWeight: 500 }}>
                                             xor.dat <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>(XOR obfuscation key, default: all zeros)</span>
                                         </label>
-                                        <button
-                                            className="btn btn-ghost"
-                                            style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }}
-                                            onClick={() => xorRef.current?.click()}
-                                        >
+                                        <button className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }}
+                                            onClick={() => xorRef.current?.click()}>
                                             📂 Upload xor.dat
                                         </button>
-                                        <input
-                                            ref={xorRef}
-                                            type="file"
-                                            accept=".dat"
-                                            style={{ display: 'none' }}
-                                            onChange={e => {
-                                                const f = e.target.files?.[0];
-                                                if (f) handleFileUpload(f, setXorHex);
-                                            }}
-                                        />
+                                        <input ref={xorRef} type="file" accept=".dat" style={{ display: 'none' }}
+                                            onChange={e => { const f = e.target.files?.[0]; if (f) setXorFile(f); }} />
+                                        {xorFile && <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ {xorFile.name}</span>}
                                     </div>
-                                    <input
-                                        type="text"
-                                        placeholder="0000000000000000"
-                                        value={xorHex}
-                                        onChange={e => setXorHex(e.target.value)}
-                                        style={{ resize: 'none', maxWidth: 300, fontFamily: 'JetBrains Mono, monospace' }}
-                                    />
+                                    {!xorFile && (
+                                        <input type="text" placeholder="0000000000000000" value={xorHex}
+                                            onChange={e => setXorHex(e.target.value)}
+                                            style={{ resize: 'none', maxWidth: 300, fontFamily: 'JetBrains Mono, monospace' }} />
+                                    )}
                                 </div>
                                 <div>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={runBlockAnalysis}
-                                        disabled={blockLoading || !blkHex.trim()}
-                                    >
+                                    <button className="btn btn-primary" onClick={runBlockAnalysis}
+                                        disabled={blockLoading || !hasBlockInput}>
                                         {blockLoading
                                             ? <><span className="animate-spin" style={{ display: 'inline-block', marginRight: 4 }}>⟳</span> Analyzing…</>
                                             : <>📦 Analyze Block</>}
                                     </button>
+                                    {blkFile && (
+                                        <button className="btn btn-ghost" style={{ marginLeft: 8, fontSize: 12 }}
+                                            onClick={() => { setBlkFile(null); setRevFile(null); setXorFile(null); setBlkHex(''); setRevHex(''); setBlockResult(null); }}>
+                                            Clear files
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 

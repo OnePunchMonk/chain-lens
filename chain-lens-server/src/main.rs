@@ -1,13 +1,13 @@
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, Multipart, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
-use chain_lens_core::{parse_transaction_with_prevouts, ErrorObject};
-use chain_lens_core::parser::Prevout;
 use chain_lens_core::block_parser::parse_blocks_from_file;
-use chain_lens_core::xor::{decode_file};
+use chain_lens_core::parser::Prevout;
+use chain_lens_core::xor::decode_file;
+use chain_lens_core::{parse_transaction_with_prevouts, ErrorObject};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
@@ -24,14 +24,13 @@ struct HealthResponse {
 #[tokio::main]
 async fn main() {
     // Locate web dist relative to current working directory
-    let web_dist = std::env::current_dir()
-        .unwrap()
-        .join("web")
-        .join("dist");
+    let web_dist = std::env::current_dir().unwrap().join("web").join("dist");
 
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/analyze", post(analyze))
+        .route("/api/analyze-block-upload", post(analyze_block_upload))
+        .layer(DefaultBodyLimit::max(512 * 1024 * 1024)) // 512 MB limit for block uploads
         .layer(CorsLayer::permissive())
         .with_state(AppState)
         .fallback_service(ServeDir::new(&web_dist).append_index_html_on_directories(true));
@@ -47,7 +46,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-
 
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { ok: true })
@@ -146,6 +144,72 @@ async fn analyze_block(body: serde_json::Value) -> (StatusCode, Json<serde_json:
 
     let blk_data = decode_file(&blk_raw, &key);
     let rev_data = decode_file(&rev_raw, &key);
+
+    match parse_blocks_from_file(&blk_data, &rev_data) {
+        Ok(reports) => {
+            let val = serde_json::to_value(&reports).unwrap();
+            (StatusCode::OK, Json(val))
+        }
+        Err(e) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": {"code": "PARSE_ERROR", "message": e.to_string()}
+            })),
+        ),
+    }
+}
+
+/// Accept block files as binary multipart/form-data uploads.
+/// Fields: "blk" (required), "rev" (optional), "xor" (optional, 8-byte key).
+async fn analyze_block_upload(mut multipart: Multipart) -> (StatusCode, Json<serde_json::Value>) {
+    let mut blk_raw: Option<Vec<u8>> = None;
+    let mut rev_raw: Vec<u8> = vec![];
+    let mut xor_key: [u8; 8] = [0u8; 8];
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        match field.bytes().await {
+            Ok(data) => match name.as_str() {
+                "blk" => {
+                    blk_raw = Some(data.to_vec());
+                }
+                "rev" => {
+                    rev_raw = data.to_vec();
+                }
+                "xor" => {
+                    let copy_len = data.len().min(8);
+                    xor_key[..copy_len].copy_from_slice(&data[..copy_len]);
+                }
+                _ => {}
+            },
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "ok": false,
+                        "error": {"code": "UPLOAD_ERROR", "message": format!("Failed to read field '{}': {}", name, e)}
+                    })),
+                );
+            }
+        }
+    }
+
+    let blk_raw = match blk_raw {
+        Some(b) if !b.is_empty() => b,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": {"code": "INVALID_ARGS", "message": "missing 'blk' file upload"}
+                })),
+            );
+        }
+    };
+
+    let blk_data = decode_file(&blk_raw, &xor_key);
+    let rev_data = decode_file(&rev_raw, &xor_key);
 
     match parse_blocks_from_file(&blk_data, &rev_data) {
         Ok(reports) => {

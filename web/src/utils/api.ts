@@ -32,6 +32,28 @@ export async function analyzeBlock(
   return res.json();
 }
 
+/** Upload block files as binary via multipart/form-data (avoids hex conversion crash). */
+export async function analyzeBlockUpload(
+  blkFile: File,
+  revFile: File | null,
+  xorFile: File | null,
+) {
+  const form = new FormData();
+  form.append('blk', blkFile);
+  if (revFile) form.append('rev', revFile);
+  if (xorFile) form.append('xor', xorFile);
+  const res = await fetch(`${API}/api/analyze-block-upload`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    const msg = errBody?.error?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 export async function checkHealth() {
   const res = await fetch(`${API}/api/health`);
   return res.json();

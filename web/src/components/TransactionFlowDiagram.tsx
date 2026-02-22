@@ -157,13 +157,13 @@ export function TransactionFlowDiagram({ vin, vout, totalInput, totalOutput, fee
                 className="flow-node flow-node-in"
                 filter="url(#glow)"
               />
-              <text x={NODE_W / 2} y={22} textAnchor="middle" className="flow-node-value">
+              <text x={NODE_W / 2} y={22} textAnchor="middle" className="flow-node-value flow-node-text">
                 {node.value ? formatSats(node.value) : '?'}
               </text>
-              <text x={NODE_W / 2} y={38} textAnchor="middle" className="flow-node-label">
+              <text x={NODE_W / 2} y={38} textAnchor="middle" className="flow-node-label flow-node-text">
                 {node.label}
               </text>
-              <text x={NODE_W / 2} y={54} textAnchor="middle" className="flow-node-type">
+              <text x={NODE_W / 2} y={54} textAnchor="middle" className="flow-node-type flow-node-text">
                 {node.type}
               </text>
             </g>
@@ -179,10 +179,10 @@ export function TransactionFlowDiagram({ vin, vout, totalInput, totalOutput, fee
             ry="12"
             className="flow-node flow-node-fee"
           />
-          <text x={CENTER_W / 2} y={28} textAnchor="middle" className="flow-node-fee-title">
+          <text x={CENTER_W / 2} y={28} textAnchor="middle" className="flow-node-fee-title flow-node-text">
             Miner Fee
           </text>
-          <text x={CENTER_W / 2} y={52} textAnchor="middle" className="flow-node-fee-value">
+          <text x={CENTER_W / 2} y={52} textAnchor="middle" className="flow-node-fee-value flow-node-text">
             {formatSats(feeSats)}
           </text>
         </g>
@@ -199,13 +199,13 @@ export function TransactionFlowDiagram({ vin, vout, totalInput, totalOutput, fee
                 className={`flow-node flow-node-out ${node.type === 'op_return' ? 'flow-node-opreturn' : ''}`}
                 filter="url(#glow)"
               />
-              <text x={NODE_W / 2} y={22} textAnchor="middle" className="flow-node-value">
+              <text x={NODE_W / 2} y={22} textAnchor="middle" className="flow-node-value flow-node-text">
                 {node.type === 'op_return' ? 'OP_RETURN' : formatSats(node.value)}
               </text>
-              <text x={NODE_W / 2} y={38} textAnchor="middle" className="flow-node-label">
+              <text x={NODE_W / 2} y={38} textAnchor="middle" className="flow-node-label flow-node-text">
                 {node.label}
               </text>
-              <text x={NODE_W / 2} y={54} textAnchor="middle" className="flow-node-type">
+              <text x={NODE_W / 2} y={54} textAnchor="middle" className="flow-node-type flow-node-text">
                 {node.type}
               </text>
             </g>
