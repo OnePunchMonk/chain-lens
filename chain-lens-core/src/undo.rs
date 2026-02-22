@@ -121,6 +121,8 @@ pub fn parse_undo_script(data: &[u8], offset: &mut usize) -> Result<Vec<u8>, Cha
         }
         4 | 5 => {
             // Uncompressed P2PK stored as compressed (32 x-coord bytes)
+            // NOTE: Proper reconstruction requires SECP256K1 decompression to 65 bytes.
+            // For now, we store as 33 bytes (prefix 02/03 + x).
             let x_bytes = read_n(data, offset, 32)?;
             let prefix = if n_size == 4 { 0x02u8 } else { 0x03u8 };
             let mut pubkey = Vec::with_capacity(33);
@@ -228,4 +230,60 @@ pub fn parse_block_undo(
         all_txs.push(tx_prevouts);
     }
     Ok(all_txs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decompress_amount() {
+        assert_eq!(decompress_amount(0), 0);
+        assert_eq!(decompress_amount(1), 1);
+        assert_eq!(decompress_amount(2), 10);
+        assert_eq!(decompress_amount(11), 2);
+    }
+
+    #[test]
+    fn test_parse_undo_script_p2pkh() {
+        let mut data = vec![0x00]; // nSize=0
+        data.extend_from_slice(&[0x11; 20]); // 20-byte hash
+        let mut off = 0;
+        let script = parse_undo_script(&data, &mut off).unwrap();
+        assert_eq!(script.len(), 25);
+        assert_eq!(script[0..3], [0x76, 0xa9, 0x14]);
+        assert_eq!(script[23..25], [0x88, 0xac]);
+    }
+
+    #[test]
+    fn test_parse_undo_script_p2sh() {
+        let mut data = vec![0x01]; // nSize=1
+        data.extend_from_slice(&[0x22; 20]);
+        let mut off = 0;
+        let script = parse_undo_script(&data, &mut off).unwrap();
+        assert_eq!(script.len(), 23);
+        assert_eq!(script[0..2], [0xa9, 0x14]);
+        assert_eq!(script[22], 0x87);
+    }
+
+    #[test]
+    fn test_parse_undo_script_p2pk_compressed() {
+        let mut data = vec![0x02]; // nSize=2 (even)
+        data.extend_from_slice(&[0x33; 32]);
+        let mut off = 0;
+        let script = parse_undo_script(&data, &mut off).unwrap();
+        assert_eq!(script.len(), 35);
+        assert_eq!(script[0], 0x21); // push 33
+        assert_eq!(script[1], 0x02); // prefix
+        assert_eq!(script[34], 0xac); // checksig
+    }
+
+    #[test]
+    fn test_parse_undo_script_raw() {
+        let mut data = vec![0x0c]; // nSize=12 -> script_len=6
+        data.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+        let mut off = 0;
+        let script = parse_undo_script(&data, &mut off).unwrap();
+        assert_eq!(script, vec![0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
+    }
 }

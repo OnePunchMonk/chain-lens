@@ -319,3 +319,72 @@ fn bech32_encode(hrp: &str, witness_ver: u8, program: &[u8]) -> Result<String, S
     };
     bech32::encode(hrp, data, variant).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_p2wpkh_input() {
+        // Native P2WPKH: empty script_sig, witness has 2 items
+        let script_sig = vec![];
+        let witness = vec![vec![0x01; 64], vec![0x02; 33]];
+        let mut prevout = vec![0x00, 0x14]; // p2wpkh
+        prevout.extend_from_slice(&[0xaa; 20]);
+        let itype = classify_input(&script_sig, &witness, &prevout);
+        assert_eq!(itype.as_str(), "p2wpkh");
+    }
+
+    #[test]
+    fn test_classify_p2sh_p2wpkh_input() {
+        // Nested P2WPKH: script_sig pushes [0x00, 0x14, <20b>], witness has 2 items
+        let mut script_sig = vec![0x16];
+        script_sig.extend_from_slice(&[0x00, 0x14]);
+        script_sig.extend_from_slice(&[0xaa; 20]);
+        let witness = vec![vec![0x01; 64], vec![0x02; 33]];
+        let mut prevout = vec![0xa9, 0x14]; // p2sh
+        prevout.extend_from_slice(&[0xcc; 20]);
+        prevout.push(0x87);
+        let itype = classify_input(&script_sig, &witness, &prevout);
+        assert_eq!(itype.as_str(), "p2sh-p2wpkh");
+    }
+
+    #[test]
+    fn test_classify_p2tr_keypath() {
+        let script_sig = vec![];
+        let witness = vec![vec![0x01; 64]]; // 64-byte sig
+        let mut prevout = vec![0x51, 0x20]; // p2tr
+        prevout.extend_from_slice(&[0xaa; 32]);
+        let itype = classify_input(&script_sig, &witness, &prevout);
+        assert_eq!(itype.as_str(), "p2tr_keypath");
+    }
+
+    #[test]
+    fn test_classify_p2tr_scriptpath() {
+        let script_sig = vec![];
+        let witness = vec![
+            vec![0x01],       // script-specific item
+            vec![0x20; 32],   // script
+            vec![0xc0, 0x33], // control block
+        ];
+        let mut prevout = vec![0x51, 0x20];
+        prevout.extend_from_slice(&[0xaa; 32]);
+        let itype = classify_input(&script_sig, &witness, &prevout);
+        assert_eq!(itype.as_str(), "p2tr_scriptpath");
+    }
+
+    #[test]
+    fn test_classify_p2tr_annex() {
+        let script_sig = vec![];
+        let witness = vec![
+            vec![0x01],       // script-specific item
+            vec![0x20; 32],   // script
+            vec![0xc1, 0x33], // control block
+            vec![0x50, 0x77], // annex
+        ];
+        let mut prevout = vec![0x51, 0x20];
+        prevout.extend_from_slice(&[0xaa; 32]);
+        let itype = classify_input(&script_sig, &witness, &prevout);
+        assert_eq!(itype.as_str(), "p2tr_scriptpath");
+    }
+}
