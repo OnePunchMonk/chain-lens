@@ -20,7 +20,7 @@ jobs:
         test-name: Evaluate Submission
         setup-command: "./setup.sh"
         command: "./grade.sh"
-        timeout: 300
+        timeout: 10
     - name: Autograding Reporter
       uses: classroom-resources/autograding-grading-reporter@v1
       env:
