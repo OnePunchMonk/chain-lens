@@ -148,13 +148,14 @@ fn parse_single_block(
     undo_data: &[u8],
     undo_offset: &mut usize,
 ) -> Result<BlockReport, ChainLensError> {
-    let mut offset = 0usize;
+    let mut offset = 0usize; // current read position in block_bytes
 
     // ── Block header (80 bytes) ──
     if block_bytes.len() < 80 {
         return Err(ChainLensError::ParseError("block too small for header".into()));
     }
-    let header_bytes = &block_bytes[0..80];
+    let header_bytes = &block_bytes[offset..offset + 80];
+    offset += 80;
 
     let version = i32::from_le_bytes(header_bytes[0..4].try_into().unwrap());
     let prev_hash_raw: [u8; 32] = header_bytes[4..36].try_into().unwrap();
@@ -174,8 +175,6 @@ fn parse_single_block(
 
     let bits = format!("{:08x}", bits_raw);
 
-    offset = 80;
-
     // ── Transaction count ──
     let tx_count = read_varint(block_bytes, &mut offset)? as usize;
 
@@ -188,14 +187,16 @@ fn parse_single_block(
         raw_txs.push(tx_bytes);
     }
 
-    // ── Parse undo data for this block ──
+    // ── Parse undo data for this block (required for fee calculation) ──
     let undo_prevouts = if !undo_data.is_empty() {
         let mut local_offset = *undo_offset;
         let result = parse_block_undo_at(undo_data, &mut local_offset, tx_count);
         *undo_offset = local_offset;
-        result.unwrap_or_default()
+        result.map_err(|e| ChainLensError::ParseError(format!("undo parse: {}", e)))?
     } else {
-        vec![vec![]; tx_count.saturating_sub(1)]
+        return Err(ChainLensError::ParseError(
+            "block mode requires undo data for prevout resolution".into(),
+        ));
     };
 
     // ── Build txids for merkle root ──
@@ -259,7 +260,8 @@ fn parse_single_block(
 
         match parsed {
             Ok(tx) => {
-                if i > 0 && tx.fee_sats > 0 {
+                // Sum fees for all non-coinbase transactions (fee = inputs - outputs)
+                if i > 0 {
                     total_fees += tx.fee_sats;
                 }
                 total_weight += tx.weight;
@@ -389,12 +391,11 @@ fn compute_txid(raw_tx: &[u8]) -> [u8; 32] {
 }
 
 fn build_base_bytes(tx: &[u8]) -> Result<Vec<u8>, ()> {
-    let mut offset = 0usize;
     let mut base = Vec::new();
 
     if tx.len() < 4 { return Err(()); }
     base.extend_from_slice(&tx[0..4]);
-    offset = 4;
+    let mut offset = 4usize;
 
     let segwit = if offset + 2 <= tx.len() && tx[offset] == 0x00 && tx[offset + 1] == 0x01 {
         offset += 2;
@@ -577,14 +578,32 @@ fn decode_bip34_height(script: &[u8]) -> Option<u64> {
 }
 
 /// Parse undo data for a specific block starting at undo_offset.
-/// Returns prevouts grouped by tx (excluding coinbase).
-/// The `offset` is updated in place to point past this block's undo data.
+/// Bitcoin Core rev*.dat format: per-block record is magic(4) + size(4) + CBlockUndo(size) + hash(32).
+/// If magic is present we skip the wrapper and parse only the CBlockUndo slice.
 fn parse_block_undo_at(
     undo_data: &[u8],
     offset: &mut usize,
     n_txs: usize,
 ) -> Result<Vec<Vec<crate::undo::UndoPrevout>>, ChainLensError> {
-    // Pass the full undo_data and the mutable offset so that parse_block_undo
-    // advances *offset correctly across multiple blocks in the same file.
-    crate::undo::parse_block_undo(undo_data, offset, n_txs)
+    if *offset + 8 > undo_data.len() {
+        return Err(ChainLensError::ParseError("undo data truncated (header)".into()));
+    }
+    let magic = u32::from_le_bytes(undo_data[*offset..*offset + 4].try_into().unwrap());
+    let size = u32::from_le_bytes(undo_data[*offset + 4..*offset + 8].try_into().unwrap()) as usize;
+
+    let block_undo_start = *offset + 8;
+    let block_undo_end = block_undo_start + size;
+    if magic == BLOCK_MAGIC {
+        if block_undo_end + 32 > undo_data.len() {
+            return Err(ChainLensError::ParseError("undo data truncated (block record)".into()));
+        }
+        let block_undo_slice = &undo_data[block_undo_start..block_undo_end];
+        let mut local = 0usize;
+        let result = crate::undo::parse_block_undo(block_undo_slice, &mut local, n_txs);
+        *offset = block_undo_end + 32;
+        result
+    } else {
+        // No wrapper: raw CBlockUndo at current offset (e.g. test data)
+        crate::undo::parse_block_undo(undo_data, offset, n_txs)
+    }
 }

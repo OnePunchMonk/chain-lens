@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { formatSats, short, scriptTypeColor, WARNING_INFO } from '../utils/api';
+import { TransactionFlowDiagram } from './TransactionFlowDiagram';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Vin {
@@ -137,69 +138,6 @@ function ScriptAsm({ asm }: { asm: string }) {
   );
 }
 
-// ─── Value Flow Diagram ───────────────────────────────────────────────────────
-function ValueFlow({ vin, vout, fee_sats }: { vin: Vin[]; vout: Vout[]; fee_sats: number }) {
-  const maxBars = Math.max(vin.length, vout.length);
-  return (
-    <div className="flow-container" style={{ alignItems: 'stretch' }}>
-      {/* Inputs column */}
-      <div className="flow-col">
-        <div className="stat-label" style={{ marginBottom: 4, paddingLeft: 4 }}>Inputs</div>
-        {vin.map((v, i) => (
-          <div key={i} className="flow-node flow-node-in" style={{ animationDelay: `${i * 0.05}s` }}>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 2 }}>#{i}</div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--accent)' }}>
-              {v.prevout ? formatSats(v.prevout.value_sats) : '?'}
-            </div>
-            {v.address && (
-              <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2, wordBreak: 'break-all' }}>
-                {short(v.address, 6)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Center arrow + tx box */}
-      <div className="flow-center">
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <div className="flow-tx-box">
-            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>TX</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber)', marginTop: 4 }}>
-              Fee: {formatSats(fee_sats)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Outputs column */}
-      <div className="flow-col">
-        <div className="stat-label" style={{ marginBottom: 4, paddingLeft: 4 }}>Outputs</div>
-        {vout.map((v, i) => (
-          <div key={i} className="flow-node flow-node-out" style={{ animationDelay: `${i * 0.05}s` }}>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 2 }}>
-              #{v.n} <span className={`badge ${scriptTypeColor(v.script_type)}`} style={{ padding: '1px 6px', fontSize: 10 }}>{v.script_type}</span>
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: v.script_type === 'op_return' ? 'var(--text-dim)' : 'var(--green)' }}>
-              {v.script_type === 'op_return' ? 'OP_RETURN' : formatSats(v.value_sats)}
-            </div>
-            {v.address && (
-              <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2, wordBreak: 'break-all' }}>
-                {short(v.address, 6)}
-              </div>
-            )}
-            {v.op_return_data_utf8 && typeof v.op_return_data_utf8 === 'string' && (
-              <div style={{ fontSize: 10, color: 'var(--purple)', marginTop: 2 }}>
-                "{v.op_return_data_utf8}"
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── SegWit Savings ───────────────────────────────────────────────────────────
 function SegwitSavingsPanel({ s }: { s: SegwitSavings }) {
   return (
@@ -232,7 +170,7 @@ function SegwitSavingsPanel({ s }: { s: SegwitSavings }) {
 }
 
 // ─── Input Panel ──────────────────────────────────────────────────────────────
-function InputPanel({ v, idx }: { v: Vin; idx: number }) {
+function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechnical: boolean }) {
   const hasWitness = v.witness.length > 0;
   const rtl = v.relative_timelock;
 
@@ -275,13 +213,18 @@ function InputPanel({ v, idx }: { v: Vin; idx: number }) {
           </div>
         )}
 
-        {v.script_asm && (
+        {showTechnical && v.script_asm && (
           <Collapsible label="scriptSig ASM">
             <ScriptAsm asm={v.script_asm} />
           </Collapsible>
         )}
+        {!showTechnical && v.script_asm && (
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+            Enable &quot;Show technical details&quot; to view scriptSig
+          </div>
+        )}
 
-        {hasWitness && (
+        {showTechnical && hasWitness && (
           <Collapsible label={`Witness Stack (${v.witness.length} items)`}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {v.witness.map((w, wi) => (
@@ -300,13 +243,18 @@ function InputPanel({ v, idx }: { v: Vin; idx: number }) {
             )}
           </Collapsible>
         )}
+        {!showTechnical && hasWitness && (
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+            Enable &quot;Show technical details&quot; to view witness data
+          </div>
+        )}
       </div>
     </Collapsible>
   );
 }
 
 // ─── Output Panel ─────────────────────────────────────────────────────────────
-function OutputPanel({ v }: { v: Vout }) {
+function OutputPanel({ v, showTechnical }: { v: Vout; showTechnical: boolean }) {
   const isDust = v.script_type !== 'op_return' && v.value_sats < 546;
 
   return (
@@ -347,7 +295,7 @@ function OutputPanel({ v }: { v: Vout }) {
               {v.op_return_data_hex || '(empty)'}
             </div>
             {v.op_return_data_utf8 && <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>
-              UTF-8: "{v.op_return_data_utf8}"
+              UTF-8: &quot;{v.op_return_data_utf8}&quot;
             </div>}
             {v.op_return_protocol && v.op_return_protocol !== 'unknown' && (
               <div style={{ marginTop: 4 }}>
@@ -357,15 +305,22 @@ function OutputPanel({ v }: { v: Vout }) {
           </div>
         )}
 
-        <Collapsible label="scriptPubKey ASM">
-          <ScriptAsm asm={v.script_asm} />
-          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <code style={{ fontSize: 11, color: 'var(--text-dim)', wordBreak: 'break-all', flex: 1 }}>
-              {v.script_pubkey_hex}
-            </code>
-            <CopyBtn text={v.script_pubkey_hex} />
+        {showTechnical && (
+          <Collapsible label="scriptPubKey ASM">
+            <ScriptAsm asm={v.script_asm} />
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <code style={{ fontSize: 11, color: 'var(--text-dim)', wordBreak: 'break-all', flex: 1 }}>
+                {v.script_pubkey_hex}
+              </code>
+              <CopyBtn text={v.script_pubkey_hex} />
+            </div>
+          </Collapsible>
+        )}
+        {!showTechnical && (
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+            Enable &quot;Show technical details&quot; to view scriptPubKey
           </div>
-        </Collapsible>
+        )}
       </div>
     </Collapsible>
   );
@@ -392,14 +347,69 @@ function WarningsPanel({ warnings }: { warnings: Warning[] }) {
   );
 }
 
+// ─── Story Narrative ───────────────────────────────────────────────────────────
+function StoryNarrative({ data }: { data: TxData }) {
+  const inpCount = data.vin.length;
+  const outCount = data.vout.length;
+  const hasWarnings = data.warnings.length > 0;
+
+  return (
+    <div className="card story-card">
+      <div className="section-title" style={{ marginBottom: 12 }}>📖 What happened?</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, lineHeight: 1.6, color: 'var(--text)' }}>
+        <p>
+          This transaction <strong>spends {inpCount} old payment{inpCount !== 1 ? 's' : ''}</strong> (inputs)
+          and creates <strong>{outCount} new payment{outCount !== 1 ? 's' : ''}</strong> (outputs).
+          Inputs are previous outputs being spent; outputs are where value goes (addresses or OP_RETURN data).
+        </p>
+        <p>
+          <strong>Who paid whom?</strong> Value flowed from the input addresses to the output addresses.
+          The difference between <strong>{formatSats(data.total_input_sats)}</strong> in and{' '}
+          <strong>{formatSats(data.total_output_sats)}</strong> out is the{' '}
+          <strong style={{ color: 'var(--amber)' }}>fee: {formatSats(data.fee_sats)}</strong> paid to the network.
+        </p>
+        <p>
+          <strong>What did it cost?</strong> The fee rate is{' '}
+          <strong>{data.fee_rate_sat_vb.toFixed(2)} sat/vB</strong>. Transaction size is{' '}
+          <strong>{data.vbytes.toFixed(0)} vBytes</strong> (virtual bytes) — larger transactions cost more.
+          {data.segwit && (
+            <> This is a <strong>SegWit</strong> transaction, so witness data is discounted and saves space.</>
+          )}
+        </p>
+        {hasWarnings && (
+          <p>
+            <strong>Is anything risky?</strong> ⚠ This transaction has {data.warnings.length} warning{data.warnings.length !== 1 ? 's' : ''} —
+            see the warnings panel for details.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Visualizer ──────────────────────────────────────────────────────────
 export function TransactionVisualizer({ data }: { data: TxData }) {
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const efficiency = data.total_input_sats > 0
     ? ((data.total_output_sats / data.total_input_sats) * 100).toFixed(1)
     : '?';
 
   return (
     <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── Story Narrative ── */}
+      <StoryNarrative data={data} />
+
+      {/* ── Show Technical Details Toggle ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: 12 }}
+          onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+        >
+          {showTechnicalDetails ? '🙈 Hide' : '🔬 Show'} technical details (hex, scripts)
+        </button>
+      </div>
 
       {/* ── Header Row ── */}
       <div className="card" style={{
@@ -504,14 +514,22 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
         </div>
       )}
 
-      {/* ── Value Flow ── */}
-      <div className="card">
-        <div className="section-title">Value Flow</div>
-        <ValueFlow vin={data.vin} vout={data.vout} fee_sats={data.fee_sats} />
-        <div style={{ marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-soft)' }}>
-          <span>In: <strong style={{ color: 'var(--text)' }}>{formatSats(data.total_input_sats)}</strong></span>
-          <span>Out: <strong style={{ color: 'var(--text)' }}>{formatSats(data.total_output_sats)}</strong></span>
-          <span>Fee: <strong style={{ color: 'var(--amber)' }}>{formatSats(data.fee_sats)}</strong></span>
+      {/* ── Value Flow Diagram (SVG visualizer) ── */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.15)' }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>Transaction Flow</div>
+          <p style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4, marginBottom: 0 }}>
+            Value moves from inputs (left) through the miner fee (center) to outputs (right). Line thickness approximates value proportion.
+          </p>
+        </div>
+        <div style={{ padding: 24 }}>
+          <TransactionFlowDiagram
+            vin={data.vin}
+            vout={data.vout}
+            totalInput={data.total_input_sats}
+            totalOutput={data.total_output_sats}
+            feeSats={data.fee_sats}
+          />
         </div>
       </div>
 
@@ -523,7 +541,7 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
           </div>
         </div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {data.vin.map((v, i) => <InputPanel key={i} v={v} idx={i} />)}
+          {data.vin.map((v, i) => <InputPanel key={i} v={v} idx={i} showTechnical={showTechnicalDetails} />)}
         </div>
       </div>
 
@@ -535,25 +553,31 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
           </div>
         </div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {data.vout.map((v, i) => <OutputPanel key={i} v={v} />)}
+          {data.vout.map((v, i) => <OutputPanel key={i} v={v} showTechnical={showTechnicalDetails} />)}
         </div>
       </div>
 
       {/* ── Raw JSON ── */}
-      <Collapsible label="Raw JSON Response">
-        <div style={{ position: 'relative' }}>
-          <pre style={{
-            fontSize: 11, color: 'var(--text-soft)', whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all', maxHeight: 400, overflowY: 'auto',
-            background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 12
-          }}>
-            {JSON.stringify(data, null, 2)}
-          </pre>
-          <div style={{ position: 'absolute', top: 8, right: 8 }}>
-            <CopyBtn text={JSON.stringify(data, null, 2)} />
+      {showTechnicalDetails ? (
+        <Collapsible label="Raw JSON Response">
+          <div style={{ position: 'relative' }}>
+            <pre style={{
+              fontSize: 11, color: 'var(--text-soft)', whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all', maxHeight: 400, overflowY: 'auto',
+              background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 12
+            }}>
+              {JSON.stringify(data, null, 2)}
+            </pre>
+            <div style={{ position: 'absolute', top: 8, right: 8 }}>
+              <CopyBtn text={JSON.stringify(data, null, 2)} />
+            </div>
           </div>
+        </Collapsible>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic', padding: 8 }}>
+          Enable &quot;Show technical details&quot; to view raw JSON
         </div>
-      </Collapsible>
+      )}
     </div>
   );
 }

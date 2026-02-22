@@ -10,6 +10,14 @@ export async function analyzeTransaction(raw_tx: string, prevouts: unknown[]) {
   return res.json();
 }
 
+/** Accept full fixture JSON and analyze. Extracts raw_tx and prevouts. */
+export async function analyzeFixture(fixture: { raw_tx?: string; prevouts?: unknown[] }) {
+  const raw_tx = fixture.raw_tx;
+  const prevouts = fixture.prevouts ?? [];
+  if (!raw_tx) throw new Error('Fixture must contain raw_tx');
+  return analyzeTransaction(raw_tx, prevouts);
+}
+
 export async function analyzeBlock(
   block_data_hex: string,
   undo_data_hex: string,

@@ -6,8 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Ensure output directory exists
 mkdir -p "${ROOT}/out"
 
-# Build the CLI binary
-(cd "${ROOT}" && cargo build -q -p chain-lens-core --release 2>&1) || {
+# Build the CLI binary (suppress warnings so stdout is pure JSON when running)
+(cd "${ROOT}" && RUSTFLAGS="-Awarnings" cargo build -q -p chain-lens-core --release 2>/dev/null) || {
   printf '{"ok":false,"error":{"code":"BUILD_ERROR","message":"Failed to build chain-lens-core"}}\n'
   exit 1
 }
@@ -53,9 +53,8 @@ if [ ! -f "$FIXTURE" ]; then
   exit 1
 fi
 
-# Run in single-tx mode — prints JSON to stdout AND writes out/<txid>.json
-if ! OUTPUT=$("${BIN}" "${FIXTURE}" 2>&1); then
-  # On parse error, the binary already printed the error JSON to stderr+stdout
+# Run in single-tx mode — capture ONLY stdout so JSON is not mixed with stderr/warnings
+if ! OUTPUT=$("${BIN}" "${FIXTURE}" 2>/dev/null); then
   echo "$OUTPUT"
   exit 1
 fi

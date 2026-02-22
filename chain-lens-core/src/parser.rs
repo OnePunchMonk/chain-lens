@@ -419,6 +419,32 @@ pub fn parse_transaction_inner(
         });
     }
 
+    // ── Verify no extra prevouts (each prevout must correspond to an input) ──
+    if require_all_prevouts && !prevouts.is_empty() {
+        let input_keys: std::collections::HashSet<_> = raw_inputs
+            .iter()
+            .filter(|inp| {
+                let is_coinbase =
+                    inp.txid_bytes.iter().all(|b| *b == 0) && inp.vout == 0xffffffff;
+                !is_coinbase
+            })
+            .map(|inp| {
+                let txid_display =
+                    hex::encode(inp.txid_bytes.iter().rev().copied().collect::<Vec<u8>>());
+                (txid_display, inp.vout)
+            })
+            .collect();
+        for p in prevouts {
+            let key = (p.txid.clone(), p.vout);
+            if !input_keys.contains(&key) {
+                return Err(ChainLensError::InconsistentPrevouts(format!(
+                    "prevout {}:{} does not correspond to any input",
+                    key.0, key.1
+                )));
+            }
+        }
+    }
+
     // ── Build Vout list ──
     let mut total_output_sats: u64 = 0;
     let mut vouts: Vec<Vout> = Vec::with_capacity(out_count);

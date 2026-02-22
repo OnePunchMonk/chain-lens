@@ -111,30 +111,35 @@ fn read_n(data: &[u8], offset: &mut usize, n: usize) -> Result<Vec<u8>, ChainLen
     Ok(bytes)
 }
 
-/// Parse the undo file for one block: returns a flat list of prevouts,
-/// ordered as they appear (block-tx order, then input order, skipping coinbase).
+/// CTxInUndo order (Bitcoin Core): varint(height), [varint(version) if height>0], CompressedScript, CompressedAmount.
+fn read_one_txin_undo(data: &[u8], offset: &mut usize) -> Result<UndoPrevout, ChainLensError> {
+    let height_encoded = read_varint(data, offset)?;
+    let height = height_encoded / 2;
+    if height > 0 {
+        let _version = read_varint(data, offset)?;
+    }
+    let script_pubkey = parse_undo_script(data, offset)?;
+    let compressed_value = read_varint(data, offset)?;
+    let value_sats = decompress_amount(compressed_value);
+    Ok(UndoPrevout { value_sats, script_pubkey })
+}
+
+/// Parse the undo file for one block: returns prevouts per non-coinbase tx,
+/// ordered as they appear (block-tx order, then input order).
 ///
-/// Format: for each non-coinbase tx, for each input:
-///   compressed_amount (varint) | nSize (varint) | script bytes
+/// CBlockUndo: CompactSize (n_txs-1), then for each CTxUndo: CompactSize (n_inputs), then
+/// for each CTxInUndo: height, [version], CompressedScript, CompressedAmount.
 ///
-/// `offset` is updated in place to point past this block's undo data,
-/// so subsequent calls for the next block start at the correct position.
+/// `offset` is updated in place to point past this block's undo data.
 pub fn parse_block_undo(data: &[u8], offset: &mut usize, n_txs: usize) -> Result<Vec<Vec<UndoPrevout>>, ChainLensError> {
     let mut all_txs: Vec<Vec<UndoPrevout>> = Vec::new();
 
-    // The undo file stores entries for all non-coinbase transactions.
-    // Each "CTxUndo" starts with a varint of input count, then one entry per input.
-    // For `n_txs` total txs, there are n_txs - 1 CTxUndo entries (coinbase has no undo).
     for _ in 0..(n_txs.saturating_sub(1)) {
         let n_inputs = read_varint(data, offset)? as usize;
         let mut tx_prevouts: Vec<UndoPrevout> = Vec::with_capacity(n_inputs);
         for _ in 0..n_inputs {
-            // Compressed value
-            let compressed_value = read_varint(data, offset)?;
-            let value_sats = decompress_amount(compressed_value);
-            // Script
-            let script_pubkey = parse_undo_script(data, offset)?;
-            tx_prevouts.push(UndoPrevout { value_sats, script_pubkey });
+            let prevout = read_one_txin_undo(data, offset)?;
+            tx_prevouts.push(prevout);
         }
         all_txs.push(tx_prevouts);
     }

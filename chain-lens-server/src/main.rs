@@ -41,8 +41,9 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3000);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Spec: Must print a single line containing the URL to stdout
     println!("http://127.0.0.1:{}", port);
-    println!("Serving static files from: {}", web_dist.display());
+    eprintln!("Serving static files from: {}", web_dist.display());
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

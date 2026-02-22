@@ -105,17 +105,20 @@ export default function App() {
         <div className="app-layout">
             {/* ── Header ── */}
             <header className="header">
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span className="header-logo">⛓ Chain Lens</span>
-                    <span className="header-sub">Bitcoin Transaction Analyzer</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="header-icon">⛓</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span className="header-logo">Chain Lens</span>
+                        <span className="header-sub">Bitcoin Transaction & Block Analyzer</span>
+                    </div>
                 </div>
                 <div style={{ flex: 1 }} />
-                <div className="tabs" style={{ width: 260 }}>
+                <div className="tabs" style={{ width: 280 }}>
                     <button className={`tab ${tab === 'tx' ? 'active' : ''}`} onClick={() => setTab('tx')}>
-                        🔍 Transaction
+                        <span style={{ marginRight: 6 }}>◉</span> Transaction
                     </button>
                     <button className={`tab ${tab === 'block' ? 'active' : ''}`} onClick={() => setTab('block')}>
-                        📦 Block
+                        <span style={{ marginRight: 6 }}>▣</span> Block
                     </button>
                 </div>
             </header>
