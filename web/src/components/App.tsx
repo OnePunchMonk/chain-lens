@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import '../styles/index.css';
 import { TransactionLoader } from './TransactionLoader';
 import { BlockVisualizer } from './BlockVisualizer';
-import { analyzeBlock } from '../utils/api';
+import { analyzeBlock, getErrorEli5 } from '../utils/api';
 
 type Tab = 'tx' | 'block';
 type Theme = 'dark' | 'light' | 'system';
@@ -161,9 +161,15 @@ export default function App() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                         <div className="card">
                             <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Analyze Block File</h2>
-                            <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 14 }}>
+                            <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
                                 Upload <code>blk*.dat</code>, <code>rev*.dat</code>, and <code>xor.dat</code> from a Bitcoin Core data directory, or paste their hex contents below.
                             </p>
+                            <div className="eli5-callout" style={{
+                                padding: '10px 14px', background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)',
+                                borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text-soft)'
+                            }}>
+                                <strong>What are these files?</strong> <code>blk*.dat</code> contains raw block data (the ledger pages). <code>rev*.dat</code> is an undo file that helps us find where each input came from. <code>xor.dat</code> holds a key to decode blocks that Bitcoin Core obfuscates on disk.
+                            </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                                 <FileUploadRow
                                     label="blk*.dat"
@@ -228,7 +234,13 @@ export default function App() {
                                     marginTop: 14, padding: '10px 14px', background: 'var(--red-glow)',
                                     border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: 'var(--red)'
                                 }}>
-                                    ✗ {blockError}
+                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>✗ Something went wrong</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-soft)', marginBottom: 4 }}>
+                                        {getErrorEli5(blockError).eli5}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                        🔧 Details for nerds: {getErrorEli5(blockError).nerd}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -236,7 +248,13 @@ export default function App() {
                         {blockResult && !Array.isArray(blockResult) && blockResult.ok === false && (
                             <div className="card" style={{ borderColor: 'rgba(239,68,68,0.3)' }}>
                                 <div style={{ color: 'var(--red)', fontSize: 13 }}>
-                                    ✗ {blockResult.error?.message || JSON.stringify(blockResult.error)}
+                                    <div style={{ fontWeight: 600, marginBottom: 4 }}>✗ Something went wrong</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-soft)', marginBottom: 4 }}>
+                                        {getErrorEli5(blockResult.error).eli5}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                        🔧 Details for nerds: {getErrorEli5(blockResult.error).nerd}
+                                    </div>
                                 </div>
                             </div>
                         )}

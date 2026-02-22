@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  formatSats, short, scriptTypeColor, WARNING_INFO,
+  formatSats, short, scriptTypeColor, WARNING_INFO, TERM_ELI5,
   formatRelativeTimelock, classifyFeeRate, detectLikelyChangeOutput,
   detectMultisig, downloadJson, copyJsonToClipboard, detectTxPattern,
 } from '../utils/api';
@@ -69,11 +69,22 @@ interface TxData {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function Tooltip({ tip, children }: { tip: string; children: React.ReactNode }) {
+/** tip: plain string or { eli5, nerd } for multi-line ELI5-first format */
+function Tooltip({ tip, children }: { tip: string | { eli5: string; nerd: string }; children: React.ReactNode }) {
+  const content = typeof tip === 'string'
+    ? tip
+    : (
+        <>
+          {tip.eli5}
+          <span style={{ display: 'block', marginTop: 6, fontSize: '0.9em', opacity: 0.8 }}>
+            🔧 Details for nerds: {tip.nerd}
+          </span>
+        </>
+      );
   return (
     <span className="tooltip-wrap">
       {children}
-      <span className="tooltip">{tip}</span>
+      <span className="tooltip">{content}</span>
     </span>
   );
 }
@@ -146,6 +157,9 @@ function ScriptAsm({ asm }: { asm: string }) {
 function SegwitSavingsPanel({ s }: { s: SegwitSavings }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p style={{ fontSize: 12, color: 'var(--text-soft)', margin: '0 0 4px 0', lineHeight: 1.5 }}>
+        <strong>ELI5:</strong> SegWit transactions put signatures in a separate section, so they take up less space — like folding a letter to fit a smaller envelope.
+      </p>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>SegWit Space Savings</span>
         <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--green)' }}>
@@ -307,7 +321,7 @@ function OutputPanel({ v, showTechnical, isLikelyChange }: { v: Vout; showTechni
           <span className={`badge ${scriptTypeColor(v.script_type)}`}>{v.script_type}</span>
           {isDust && <span className="badge badge-red">dust</span>}
           {isLikelyChange && (
-            <Tooltip tip="Heuristic guess: this output likely returns change to the sender (smallest output matching an input script type).">
+            <Tooltip tip={{ eli5: "Probably the sender's change coming back — like getting coins back when you overpay.", nerd: 'Heuristic: smallest output matching an input script type.' }}>
               <span className="badge badge-gray" style={{ cursor: 'help' }}>🔄 likely change</span>
             </Tooltip>
           )}
@@ -379,13 +393,18 @@ function WarningsPanel({ warnings }: { warnings: Warning[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {warnings.map((w) => {
-        const info = WARNING_INFO[w.code] || { title: w.code, desc: '' };
+        const info = WARNING_INFO[w.code] || { title: w.code, eli5: '', nerd: '' };
         return (
           <div key={w.code} className="warning-chip">
             <span style={{ fontSize: 18 }}>⚠</span>
             <div>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{info.title}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 2 }}>{info.desc}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 2 }}>{info.eli5}</div>
+              {info.nerd && (
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4, fontStyle: 'italic' }}>
+                  🔧 Details for nerds: {info.nerd}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -404,11 +423,23 @@ function StoryNarrative({ data }: { data: TxData }) {
     <div className="card story-card">
       <div className="section-title" style={{ marginBottom: 12 }}>📖 What happened?</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, lineHeight: 1.6, color: 'var(--text)' }}>
+        <div className="eli5-callout" style={{
+          padding: '10px 14px', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 8, marginBottom: 4
+        }}>
+          <strong>ELI5:</strong> Think of a transaction like moving money from your piggy banks (inputs) into new jars (outputs).
+        </div>
         <p>
           This transaction <strong>spends {inpCount} old payment{inpCount !== 1 ? 's' : ''}</strong> (inputs)
           and creates <strong>{outCount} new payment{outCount !== 1 ? 's' : ''}</strong> (outputs).
           Inputs are previous outputs being spent; outputs are where value goes (addresses or OP_RETURN data).
         </p>
+        <div className="eli5-callout" style={{
+          padding: '10px 14px', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)',
+          borderRadius: 8, marginBottom: 4
+        }}>
+          <strong>ELI5:</strong> The fee is like a toll — you pay a little bit so miners will process your transaction.
+        </div>
         <p>
           <strong>Who paid whom?</strong> Value flowed from the input addresses to the output addresses.
           The difference between <strong>{formatSats(data.total_input_sats)}</strong> in and{' '}
@@ -424,10 +455,18 @@ function StoryNarrative({ data }: { data: TxData }) {
           )}
         </p>
         {hasWarnings && (
-          <p>
-            <strong>Is anything risky?</strong> ⚠ This transaction has {data.warnings.length} warning{data.warnings.length !== 1 ? 's' : ''} —
-            see the warnings panel for details.
-          </p>
+          <>
+            <div className="eli5-callout" style={{
+              padding: '10px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)',
+              borderRadius: 8, marginBottom: 4
+            }}>
+              <strong>ELI5:</strong> A warning is a heads-up — not always bad, but worth checking.
+            </div>
+            <p>
+              <strong>Is anything risky?</strong> ⚠ This transaction has {data.warnings.length} warning{data.warnings.length !== 1 ? 's' : ''} —
+              see the warnings panel for details.
+            </p>
+          </>
         )}
       </div>
     </div>
@@ -542,7 +581,7 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
         {/* Stats grid */}
         <div className="kv-grid">
           <div className="kv">
-            <Tooltip tip="Total fee paid to miner">
+            <Tooltip tip={TERM_ELI5.fee}>
               <span className="kv-label">Fee</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18, color: 'var(--amber)' }}>
@@ -550,7 +589,7 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
             </span>
           </div>
           <div className="kv">
-            <Tooltip tip="Satoshis per virtual byte — the cost density of this transaction">
+            <Tooltip tip={{ eli5: "How much you pay per unit of size — like cents per ounce for shipping.", nerd: 'Satoshis per virtual byte; the cost density of this transaction.' }}>
               <span className="kv-label">Fee Rate</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.fee_rate_sat_vb.toFixed(2)}</span>
@@ -563,34 +602,34 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
             </Tooltip>
           </div>
           <div className="kv">
-            <Tooltip tip="Virtual weight (weight / 4) — the effective size used for fee calculation">
+            <Tooltip tip={TERM_ELI5.vbytes}>
               <span className="kv-label">Virtual Size</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.vbytes.toFixed(2)}</span>
             <span className="stat-sub">vBytes</span>
           </div>
           <div className="kv">
-            <Tooltip tip="BIP141 weight units — SegWit transactions weigh less because witness data is discounted">
+            <Tooltip tip={TERM_ELI5.weight}>
               <span className="kv-label">Weight</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.weight.toLocaleString()}</span>
             <span className="stat-sub">WU</span>
           </div>
           <div className="kv">
-            <Tooltip tip="Raw serialized byte size including all data">
+            <Tooltip tip={{ eli5: "The raw size of the transaction on disk — all bytes counted.", nerd: 'Raw serialized byte size including witness data.' }}>
               <span className="kv-label">Size</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.size_bytes.toLocaleString()}</span>
             <span className="stat-sub">bytes</span>
           </div>
           <div className="kv">
-            <Tooltip tip="Percentage of input value that ends up in outputs (not fees)">
+            <Tooltip tip={{ eli5: "How much of what went in actually reached the recipients — the rest went to fees.", nerd: 'Percentage of input value that ends up in outputs.' }}>
               <span className="kv-label">Efficiency</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18, color: 'var(--green)' }}>{efficiency}%</span>
           </div>
           <div className="kv">
-            <Tooltip tip={data.locktime_type === 'unix_timestamp' ? `Unix timestamp: ${data.locktime_value}` : data.locktime_type === 'block_height' ? `Block height: ${data.locktime_value}` : 'No locktime set'}>
+            <Tooltip tip={{ eli5: TERM_ELI5.locktime.eli5, nerd: data.locktime_type === 'unix_timestamp' ? `Unix timestamp: ${data.locktime_value}` : data.locktime_type === 'block_height' ? `Block height: ${data.locktime_value}` : data.locktime_type === 'none' ? 'No locktime set' : TERM_ELI5.locktime.nerd }}>
               <span className="kv-label">Locktime</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 15 }}>
@@ -599,11 +638,15 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
             <span className="stat-sub">{data.locktime_type}</span>
           </div>
           <div className="kv">
-            <span className="kv-label">Inputs</span>
+            <Tooltip tip={TERM_ELI5.input}>
+              <span className="kv-label">Inputs</span>
+            </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.vin.length}</span>
           </div>
           <div className="kv">
-            <span className="kv-label">Outputs</span>
+            <Tooltip tip={TERM_ELI5.output}>
+              <span className="kv-label">Outputs</span>
+            </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.vout.length}</span>
           </div>
         </div>
@@ -621,7 +664,10 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.15)' }}>
           <div className="section-title" style={{ marginBottom: 0 }}>Transaction Flow</div>
           <p style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4, marginBottom: 0 }}>
-            Value moves from inputs (left) through the miner fee (center) to outputs (right). Line thickness approximates value proportion.
+            <strong>ELI5:</strong> Think of this like a pipe: money flows from left (where it came from) through a toll booth (the miner fee) to the right (where it&apos;s going).
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, marginBottom: 0 }}>
+            Line thickness shows how much value each path carries.
           </p>
         </div>
         <div style={{ padding: 24 }}>
@@ -637,10 +683,11 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
 
       {/* ── Inputs ── */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className="section-title" style={{ marginBottom: 0 }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div className="section-title" style={{ marginBottom: 4 }}>
             Inputs <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--text-dim)' }}>×{data.vin.length}</span>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', margin: 0 }}><strong>ELI5:</strong> {TERM_ELI5.input.eli5}</p>
         </div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {data.vin.map((v, i) => <InputPanel key={i} v={v} idx={i} showTechnical={showTechnicalDetails} />)}
@@ -650,9 +697,10 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
       {/* ── Outputs ── */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div className="section-title" style={{ marginBottom: 0 }}>
+          <div className="section-title" style={{ marginBottom: 4 }}>
             Outputs <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--text-dim)' }}>×{data.vout.length}</span>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', margin: 0 }}><strong>ELI5:</strong> {TERM_ELI5.output.eli5}</p>
         </div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {data.vout.map((v, i) => <OutputPanel key={i} v={v} showTechnical={showTechnicalDetails} isLikelyChange={v.n === changeIdx} />)}

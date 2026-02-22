@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { analyzeTransaction, analyzeFixture, short, downloadJson, copyJsonToClipboard } from '../utils/api';
+import { analyzeTransaction, analyzeFixture, short, downloadJson, copyJsonToClipboard, getErrorEli5 } from '../utils/api';
 import { TransactionVisualizer } from './TransactionVisualizer';
 
 const EXAMPLES = [
@@ -135,6 +135,9 @@ export function TransactionLoader() {
                   (paste full {`{network, raw_tx, prevouts}`})
                 </span>
               </label>
+              <p style={{ fontSize: 11, color: 'var(--text-dim)', margin: '0 0 6px 0', lineHeight: 1.4 }}>
+                <strong>What is this?</strong> A fixture is the transaction data plus info about where each input came from (prevouts). Paste the whole JSON here.
+              </p>
               <textarea
                 rows={8}
                 placeholder='{"network":"mainnet","raw_tx":"0200000001...","prevouts":[{"txid":"...","vout":0,"value_sats":100000,"script_pubkey_hex":"76a914...88ac"}]}'
@@ -177,6 +180,9 @@ export function TransactionLoader() {
             }}>
               Raw Transaction (hex)
             </label>
+            <p style={{ fontSize: 11, color: 'var(--text-dim)', margin: '0 0 6px 0', lineHeight: 1.4 }}>
+              <strong>What is this?</strong> The raw transaction as a hex string — the exact bytes that get broadcast to the network.
+            </p>
             <textarea
               rows={4}
               placeholder="01000000..."
@@ -194,6 +200,9 @@ export function TransactionLoader() {
                 (array of {`{txid, vout, value_sats, script_pubkey_hex}`})
               </span>
             </label>
+            <p style={{ fontSize: 11, color: 'var(--text-dim)', margin: '0 0 6px 0', lineHeight: 1.4 }}>
+              <strong>What is this?</strong> Info about where each input came from — the previous transaction ID, output index, value, and address/script. Needed for fee and address display.
+            </p>
             <textarea
               rows={5}
               placeholder='[{"txid":"...","vout":0,"value_sats":100000,"script_pubkey_hex":"76a914...88ac"}]'
@@ -234,7 +243,13 @@ export function TransactionLoader() {
             marginTop: 14, padding: '10px 14px', background: 'var(--red-glow)',
             border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: 'var(--red)'
           }}>
-            ✗ {error}
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>✗ Something went wrong</div>
+            <div style={{ fontSize: 12, color: 'var(--text-soft)', marginBottom: 4 }}>
+              {getErrorEli5(error).eli5}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+              🔧 Details for nerds: {getErrorEli5(error).nerd}
+            </div>
             {noPrevoutHint && (
               <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
                 💡 No prevouts were provided. Add prevout data to see fee calculations, input addresses, and value flow.
@@ -247,7 +262,13 @@ export function TransactionLoader() {
             marginTop: 14, padding: '10px 14px', background: 'var(--red-glow)',
             border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: 'var(--red)'
           }}>
-            ✗ {result.error?.message || JSON.stringify(result.error)}
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>✗ Something went wrong</div>
+            <div style={{ fontSize: 12, color: 'var(--text-soft)', marginBottom: 4 }}>
+              {getErrorEli5(result.error).eli5}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+              🔧 Details for nerds: {getErrorEli5(result.error).nerd}
+            </div>
             {noPrevoutHint && (
               <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
                 💡 No prevouts were provided. Add prevout data to see fee calculations, input addresses, and value flow.

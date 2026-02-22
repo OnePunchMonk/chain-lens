@@ -221,6 +221,11 @@ export function TransactionFlowDiagram({ vin, vout, totalInput, totalOutput, fee
         </text>
       </svg>
 
+      {/* ELI5 description below SVG */}
+      <p style={{ fontSize: 12, color: 'var(--text-dim)', textAlign: 'center', margin: '12px 0 0 0', lineHeight: 1.5 }}>
+        Think of this like a pipe: money flows from left (where it came from) through a toll booth (the miner fee) to the right (where it&apos;s going).
+      </p>
+
       {/* Legend bar */}
       <div className="flow-legend">
         <span>
