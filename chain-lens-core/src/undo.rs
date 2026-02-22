@@ -165,11 +165,14 @@ fn read_n(data: &[u8], offset: &mut usize, n: usize) -> Result<Vec<u8>, ChainLen
 /// and conditionally wrote a version varint. The new Coin format removed this.
 fn read_one_txin_undo(data: &[u8], offset: &mut usize) -> Result<UndoPrevout, ChainLensError> {
     // code = height * 2 + coinbase_flag (Bitcoin Core VarInt)
-    let _code = read_btc_varint(data, offset)?;
+    let code = read_btc_varint(data, offset)?;
+    let height = code >> 1;
 
-    // NOTE: Modern Bitcoin Core (post-0.15) Coin format does NOT have a version
-    // field. The old format encoded version in the code bits, but Coin::Serialize
-    // now only writes: code, compressed_amount, compressed_script.
+    // The undo data format (as seen in these fixtures and older Bitcoin Core) 
+    // often includes the transaction version if height > 0.
+    if height > 0 {
+        let _version = read_btc_varint(data, offset)?;
+    }
 
     // Compressed amount (Bitcoin Core VarInt)
     let compressed_value = read_btc_varint(data, offset)?;
@@ -206,6 +209,13 @@ pub fn parse_block_undo(
 
     // CompactSize for vector length (how many CTxUndo entries = n_tx - 1)
     let vec_len = read_varint(data, offset)? as usize;
+
+    if vec_len > 1_000_000 {
+        return Err(ChainLensError::ParseError(format!(
+            "insane undo transaction count: {} (likely misalignment)",
+            vec_len
+        )));
+    }
 
     for _ in 0..vec_len {
         // CompactSize for per-tx input count (vector<Coin> length)

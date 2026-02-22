@@ -588,31 +588,54 @@ fn parse_block_undo_at(
     offset: &mut usize,
     n_txs: usize,
 ) -> Result<Vec<Vec<crate::undo::UndoPrevout>>, ChainLensError> {
+    // Skip any leading zero padding in undo file
+    while *offset < undo_data.len() && undo_data[*offset] == 0 {
+        *offset += 1;
+    }
+
     if *offset >= undo_data.len() {
         return Err(ChainLensError::ParseError("undo data exhausted".into()));
     }
 
     // Check for Bitcoin Core envelope: magic + size
-    let has_envelope = *offset + 8 <= undo_data.len();
-    let (magic, size) = if has_envelope {
-        let m = u32::from_le_bytes(undo_data[*offset..*offset + 4].try_into().unwrap());
-        let s = u32::from_le_bytes(undo_data[*offset + 4..*offset + 8].try_into().unwrap()) as usize;
-        (m, s)
-    } else {
-        (0, 0)
-    };
+    let has_min_header = *offset + 8 <= undo_data.len();
+    if !has_min_header {
+        // Fallback to raw parsing for very small records
+        return crate::undo::parse_block_undo(undo_data, offset, n_txs);
+    }
 
-    // Use envelope only if magic matches AND size is sane (< 50MB)
-    if magic == BLOCK_MAGIC && size > 0 && size < 50_000_000 && *offset + 8 + size + 32 <= undo_data.len() {
-        let block_undo_start = *offset + 8;
-        let block_undo_end = block_undo_start + size;
-        let block_undo_slice = &undo_data[block_undo_start..block_undo_end];
-        let mut local = 0usize;
-        let result = crate::undo::parse_block_undo(block_undo_slice, &mut local, n_txs);
-        *offset = block_undo_end + 32;
+    // Try reading magic header
+    let magic = u32::from_le_bytes(undo_data[*offset..*offset + 4].try_into().unwrap());
+    let size = u32::from_le_bytes(undo_data[*offset + 4..*offset + 8].try_into().unwrap()) as usize;
+
+    if magic == BLOCK_MAGIC {
+        // We found mainnet magic bytes! This is definitely a Bitcoin Core envelope.
+        // Even if size is missing or trailing hash is absent, we must skip the 8-byte header.
+        *offset += 8;
+        
+        if *offset + size > undo_data.len() {
+            return Err(ChainLensError::ParseError(format!(
+                "undo envelope size {} exceeds remaining data {} at offset {}",
+                size, undo_data.len() - *offset, *offset
+            )));
+        }
+
+        // Parse exactly 'size' bytes
+        let block_undo_slice = &undo_data[*offset..*offset + size];
+        let mut local_off = 0usize;
+        let result = crate::undo::parse_block_undo(block_undo_slice, &mut local_off, n_txs);
+        
+        // Advance global offset past the data
+        *offset += size;
+        
+        // Skip the constant 32-byte hash if it exists (CBlockUndo records are followed by a hash)
+        if *offset + 32 <= undo_data.len() {
+            *offset += 32;
+        }
+        
         result
     } else {
-        // Raw CBlockUndo at current offset (no envelope; e.g. grader fixtures)
+        // No magic bytes found; assume raw CBlockUndo data (used in some test fixtures/versions)
         crate::undo::parse_block_undo(undo_data, offset, n_txs)
     }
 }
