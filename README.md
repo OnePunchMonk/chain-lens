@@ -1,285 +1,130 @@
-# Week 1 Challenge: Chain Lens
+# Chain Lens
 
-## Prerequisites
-
-- Rust (stable toolchain)
-- Node.js (for the web UI, once implemented)
-
-## CLI Usage
-
-```bash
-./cli.sh fixtures/tx-example.json
-```
-
-The CLI expects a JSON fixture with at least:
-
-```json
-{
-  "raw_tx": "0200000001...",
-  "prevouts": []
-}
-```
-
-Output is printed as JSON to stdout.
-
-## Web API
-
-```bash
-./web.sh
-```
-
-This starts a server (Axum) that exposes:
-
-- `GET /api/health` → `{ "ok": true }`
-- `POST /api/analyze` with a JSON body like the CLI fixture → parsed transaction JSON
+A Bitcoin transaction and block analyzer with a Rust-powered CLI and a rich React web visualizer. Chain Lens parses raw Bitcoin data, classifies scripts and addresses, computes fees, and presents everything with interactive diagrams and plain-English explanations — designed so even non-technical users can understand what a transaction does.
 
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/BdrW_bK5)
 
+---
 
-Build a CLI tool that turns a raw Bitcoin transaction into a precise, machine-checkable JSON report, and a web visualizer (built on top of the same logic) that explains the transaction to non-technical users with diagrams, annotations, and friendly language.
+## Table of Contents
 
-This is a protocol-focused challenge: you are expected to lean on your understanding of Bitcoin transaction serialization and accounting to make your implementation robust beyond the small set of public examples.
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Getting Started](#getting-started)
+- [CLI Usage](#cli-usage)
+- [Web Visualizer](#web-visualizer)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
 
 ---
 
-## Assumptions / scope
+## Features
 
-- You do **not** need to validate signatures or execute scripts. This challenge is about parsing + accounting + classification.
-- You may assume fixtures provide all required prevouts. You don't need to connect to a node or external API to fetch missing data.
-- `network` will be `mainnet` for Week 1 evaluation.
+### Transaction Analysis
+- **Full transaction parsing** — decodes raw hex into structured JSON with txid, wtxid, version, locktime, sizes, weights, and fees.
+- **Script classification** — identifies P2PKH, P2SH, P2WPKH, P2WSH, P2TR, OP_RETURN, and nested SegWit types on both inputs and outputs.
+- **Address derivation** — computes Base58Check (legacy), Bech32 (SegWit v0), and Bech32m (Taproot) mainnet addresses.
+- **Script disassembly** — renders scriptSig and scriptPubKey as human-readable ASM with proper opcode names.
+- **OP_RETURN decoding** — extracts payload hex, attempts UTF-8 decoding, and detects known protocols (Omni, OpenTimestamps).
+- **SegWit savings analysis** — shows actual vs. hypothetical legacy weight with a savings percentage.
+- **Timelock detection** — parses absolute locktimes (block height / unix timestamp) and per-input BIP68 relative timelocks.
+- **RBF signaling** — detects BIP125 replace-by-fee from nSequence values.
+- **Warnings** — flags high fees, dust outputs, unknown scripts, and RBF signaling.
 
-## Deliverables
+### Block Analysis
+- **Bitcoin Core `.dat` file parsing** — reads `blk*.dat`, `rev*.dat`, and `xor.dat` directly, with XOR decoding.
+- **Undo data parsing** — recovers prevouts from Bitcoin Core's undo records, including compressed script types.
+- **Merkle root verification** — computes and validates the merkle root from parsed transactions.
+- **Coinbase extraction** — identifies the coinbase transaction and decodes BIP34 block height.
+- **Block statistics** — total fees, total weight, average fee rate, and script type distribution across all outputs.
 
-You must ship **both**:
-
-1. **CLI analyzer** (machine-checkable correctness).
-2. **Web transaction visualizer** (human-friendly explanation + graphics).
-
----
-
-## Required repo interface
-
-Your repository must include these scripts:
-
-### 1) `cli.sh`
-
-- Reads the fixture file.
-- Runs your CLI analyzer.
-- If the mode specified is `--block`, runs in block parsing mode; otherwise, runs in single-transaction mode.
-- Writes the JSON report to a file named `out/<txid>.json` (where `<txid>` is the computed transaction ID). The `out/` directory must be created if it does not exist.
-- If the fixture is a **single-transaction** fixture (no `"mode"` field), also prints the JSON report to **stdout**.
-- Exits:
-  - `0` on success
-  - `1` on error (invalid fixture, malformed tx, inconsistent prevouts, etc.)
-
-### 2) `web.sh`
-
-- Starts the web visualizer.
-- Must print a single line containing the URL (e.g. `http://127.0.0.1:3000`) to stdout.
-- Must keep running until terminated (CTRL+C / SIGTERM).
-- Must honor `PORT` if set (default `3000`).
+### Web Visualizer
+- **Transaction flow diagram** — SVG Sankey-style visualization showing inputs → fee → outputs with proportional line thickness.
+- **Story narrative** — plain-English "What happened?" walkthrough of any transaction.
+- **Stats dashboard** — fee, fee rate (with bucket labels like Economy/Priority), virtual size, weight, efficiency.
+- **Collapsible input/output panels** — address, value, script type badges, timelock info, witness stack viewer, highlighted ASM.
+- **Block dashboard** — block header summary, coinbase reward breakdown (subsidy vs. fees), fee rate histogram, script type distribution chart, interactive merkle tree, BIP9 version bits grid, SegWit adoption stats, intra-block spend detection.
+- **Transaction comparison** — load two transactions side-by-side and compare across 17 metrics with color-coded indicators.
+- **ELI5 tooltips everywhere** — every technical term has a plain-English explanation plus a "Details for nerds" section.
+- **Dark / Light / System theme** with smooth switching and localStorage persistence.
+- **Export** — copy JSON to clipboard or download as a file.
+- **Fully offline** — no external blockchain API required; works entirely from raw hex data or local files.
 
 ---
 
-## Fixture input format (for `cli.sh`)
+## Screenshots
 
-Fixture JSON schema (transaction mode):
-
-```json
-{
-  "network": "mainnet",
-  "raw_tx": "0200000001...",
-  "prevouts": [
-    {
-      "txid": "11...aa",
-      "vout": 0,
-      "value_sats": 123456,
-      "script_pubkey_hex": "0014..."
-    }
-  ]
-}
-```
-
-Notes:
-
-- `raw_tx` is hex-encoded Bitcoin transaction bytes (no `0x` prefix).
-- `prevouts` provides the **spent outputs** so you can compute fees.
-- Do **not** assume `prevouts` is ordered the same as the transaction inputs; match prevouts to inputs by `(txid, vout)`.
-- If a prevout is missing, duplicated, or does not correspond to an input outpoint, you must error.
+| Figure | Description |
+|--------|-------------|
+| ![Figure 1](screenshots/Figure1.png) | **Figure 1** — Transaction loader with raw hex and fixture input modes |
+| ![Figure 2](screenshots/Figure2.png) | **Figure 2** — Transaction analysis story narrative |
+| ![Figure 3](screenshots/Figure3.png) | **Figure 3** — Transaction flow diagram (inputs → outputs) |
+| ![Figure 4](screenshots/Figure4.png) | **Figure 4** — Transaction stats dashboard |
+| ![Figure 5](screenshots/Figure5.png) | **Figure 5** — SegWit savings visualization |
+| ![Figure 6](screenshots/Figure6.png) | **Figure 6** — Input/output detail panels |
+| ![Figure 7](screenshots/Figure7.png) | **Figure 7** — Block analysis overview |
+| ![Figure 8](screenshots/Figure8.png) | **Figure 8** — Block header and coinbase details |
+| ![Figure 9](screenshots/Figure9.png) | **Figure 9** — Fee rate histogram and script type distribution |
+| ![Figure 10](screenshots/Figure10.png) | **Figure 10** — Merkle tree visualization |
+| ![Figure 11](screenshots/Figure11.png) | **Figure 11** — BIP9 version bits grid |
+| ![Figure 12](screenshots/Figure12.png) | **Figure 12** — Transaction comparison view |
+| ![Figure 13](screenshots/Figure13.png) | **Figure 13** — Warnings and risk alerts |
+| ![Figure 14](screenshots/Figure14.png) | **Figure 14** — Dark and light theme variants |
 
 ---
 
-## Block parsing mode
+## Getting Started
 
-Block-level analysis uses Bitcoin Core's raw data files directly instead of a fixture JSON.
+### Prerequisites
 
-### Block-mode CLI invocation
+- **Rust** (stable toolchain)
+- **Node.js** (for the web frontend)
+
+### Setup
 
 ```bash
-cli.sh --block <blk*.dat> <rev*.dat> <xor.dat>
+./setup.sh
 ```
 
-- `<blk*.dat>`: path to a Bitcoin Core block data file (e.g. `blk00000.dat`). A single file may contain **multiple blocks** — your parser must parse and generate a report for every block in the file.
-- `<rev*.dat>`: path to the corresponding undo data file (e.g. `rev00000.dat`). Contains the prevout information (value + scriptPubKey) for every input spent in the block, in the same format as Bitcoin Core's undo records. This mirrors how Bitcoin Core stores the data needed to reverse a block during a reorg.
-- `<xor.dat>`: path to the XOR key file used by Bitcoin Core to obfuscate `blk*.dat` and `rev*.dat` files. Your parser must XOR-decode the block and undo data before parsing. If the XOR key is all zeros, no transformation is needed.
+This decompresses any block fixtures needed for testing.
 
-When the CLI receives a `--block` flag, it operates in block mode. Otherwise (when given a plain fixture JSON path), it operates in single-transaction mode (the default).
+### Build
 
-### Block-mode output file
+```bash
+# Build the Rust CLI (release mode)
+cargo build --release -p chain-lens-core
 
-For each block in the file, the CLI must write a separate JSON report to a file named `out/<block_hash>.json` (where `<block_hash>` is the computed block hash in standard reversed-hex convention). The `out/` directory must be created if it does not exist. Block-mode output is **not** printed to stdout (only the files are written).
-
-### Block-mode CLI behavior
-
-In block mode, the CLI must:
-
-1. Parse the 80-byte block header.
-2. Parse all transactions.
-3. Parse the undo data to recover prevouts for all non-coinbase inputs.
-4. Compute the merkle root from the parsed transactions.
-5. **Verify** the computed merkle root matches the header's `merkle_root`. If mismatch, return a structured error.
-6. Identify the coinbase transaction (first tx): it must have exactly one input with `txid = 0x00...00` and `vout = 0xFFFFFFFF`.
-7. For the coinbase input, decode the BIP34 block height from the scriptSig.
-
-### Block-mode output
-
-```json
-{
-  "ok": true,
-  "mode": "block",
-  "block_header": {
-    "version": 536870912,
-    "prev_block_hash": "...",
-    "merkle_root": "...",
-    "merkle_root_valid": true,
-    "timestamp": 1710000000,
-    "bits": "...",
-    "nonce": 12345,
-    "block_hash": "..."
-  },
-  "tx_count": 150,
-  "coinbase": {
-    "bip34_height": 800000,
-    "coinbase_script_hex": "...",
-    "total_output_sats": 631250000
-  },
-  "transactions": [ "/* same format as single-tx analysis, one per tx */" ],
-  "block_stats": {
-    "total_fees_sats": 6250000,
-    "total_weight": 3996000,
-    "avg_fee_rate_sat_vb": 25.1,
-    "script_type_summary": {
-      "p2wpkh": 420,
-      "p2tr": 180,
-      "p2sh": 55,
-      "p2pkh": 30,
-      "p2wsh": 12,
-      "op_return": 8,
-      "unknown": 2
-    }
-  }
-}
+# Build the web frontend
+cd web && npm install && npm run build
 ```
-
-**Notes:**
-- `total_fees_sats` is the sum of fees across all non-coinbase transactions.
-- Prevout data for all non-coinbase inputs comes exclusively from the undo file (`rev*.dat`). There is no `prevouts` array in block mode.
 
 ---
 
-## Transaction output format
+## CLI Usage
 
-```json
-{
-  "ok": true,
-  "network": "mainnet",
-  "segwit": true,
-  "txid": "...",
-  "wtxid": "...",
-  "version": 2,
-  "locktime": 800000,
-  "size_bytes": 222,
-  "weight": 561,
-  "vbytes": 141,
-  "total_input_sats": 123456,
-  "total_output_sats": 120000,
-  "fee_sats": 3456,
-  "fee_rate_sat_vb": 24.51,
-  "rbf_signaling": true,
-  "locktime_type": "block_height",
-  "locktime_value": 800000,
-  "segwit_savings": {
-    "witness_bytes": 107,
-    "non_witness_bytes": 115,
-    "total_bytes": 222,
-    "weight_actual": 561,
-    "weight_if_legacy": 888,
-    "savings_pct": 36.82
-  },
-  "vin": [
-    {
-      "txid": "...",
-      "vout": 0,
-      "sequence": 4194311,
-      "script_sig_hex": "...",
-      "script_asm": "...",
-      "witness": ["..."],
-      "script_type": "p2wpkh",
-      "address": "bc1...",
-      "prevout": {
-        "value_sats": 123456,
-        "script_pubkey_hex": "..."
-      },
-      "relative_timelock": {
-        "enabled": true,
-        "type": "blocks",
-        "value": 7
-      }
-    }
-  ],
-  "vout": [
-    {
-      "n": 0,
-      "value_sats": 120000,
-      "script_pubkey_hex": "...",
-      "script_asm": "OP_0 OP_PUSHBYTES_20 89abcdef0123456789abcdef0123456789abcdef",
-      "script_type": "p2wpkh",
-      "address": "bc1..."
-    },
-    {
-      "n": 1,
-      "value_sats": 0,
-      "script_pubkey_hex": "6a08736f622d32303236",
-      "script_asm": "OP_RETURN OP_PUSHBYTES_8 736f622d32303236",
-      "script_type": "op_return",
-      "address": null,
-      "op_return_data_hex": "736f622d32303236",
-      "op_return_data_utf8": "sob-2026",
-      "op_return_protocol": "unknown"
-    }
-  ],
-  "warnings": [
-    { "code": "RBF_SIGNALING" }
-  ]
-}
+### Transaction mode
+
+Analyze a single transaction from a fixture JSON file:
+
+```bash
+./cli.sh fixtures/transactions/tx_legacy_p2pkh.json
 ```
 
-Field requirements:
+The fixture contains `raw_tx` (hex) and `prevouts` (the spent outputs). The CLI writes a detailed JSON report to `out/<txid>.json` and prints it to stdout.
 
-- `txid`: hex string (64 chars), standard display convention.
-- `wtxid`: must be `null` for non-SegWit transactions.
-- `fee_rate_sat_vb`: JSON number; evaluator accepts small rounding differences (+/-0.01).
-- `address`: required for recognized types (on both inputs and outputs), else `null`.
-- `vout[n].n`: must equal the output index `n` (0-based).
-- `witness`: for legacy txs, return `[]` for each input. For SegWit, return the **exact** witness stack items in order (hex strings, including empty items as `""`).
-- `warnings`: order does not matter.
-- `segwit_savings`: must be `null` for non-SegWit transactions.
+### Block mode
 
-On errors:
+Analyze an entire block from Bitcoin Core data files:
 
-- `error.code` and `error.message` must be present and non-empty strings.
+```bash
+./cli.sh --block <blk*.dat> <rev*.dat> <xor.dat>
+```
 
-Error output (on failures) must be:
+Writes a JSON report for each block to `out/<block_hash>.json`.
+
+### Error handling
+
+On any failure (malformed data, missing prevouts, etc.), the CLI outputs structured JSON and exits with code `1`:
 
 ```json
 { "ok": false, "error": { "code": "INVALID_TX", "message": "..." } }
@@ -287,252 +132,67 @@ Error output (on failures) must be:
 
 ---
 
-## Script classification (outputs)
+## Web Visualizer
 
-Classify each output `script_pubkey_hex` into one of these `script_type` values:
-
-- `p2pkh`
-- `p2sh`
-- `p2wpkh`
-- `p2wsh`
-- `p2tr`
-- `op_return`
-- `unknown`
-
-For recognized types (`p2pkh`, `p2sh`, `p2wpkh`, `p2wsh`, `p2tr`), `address` must be the corresponding mainnet address string. For anything else, `address` must be `null`.
-
-### OP_RETURN payload decoding
-
-For outputs classified as `op_return`, add three additional fields:
-
-- `op_return_data_hex`: concatenation of all data pushes after `OP_RETURN`, in order. If there are no data pushes (bare `OP_RETURN`), return `""`.
-- `op_return_data_utf8`: UTF-8 decode of the raw bytes. If the bytes are not valid UTF-8, return `null`.
-- `op_return_protocol`: detect known protocols by prefix:
-  - `"omni"` — data starts with `6f6d6e69` (ASCII "omni")
-  - `"opentimestamps"` — data starts with `0109f91102`
-  - `"unknown"` — anything else (including empty)
-
-**Parsing requirement:** OP_RETURN payloads may use any valid push opcode (direct push `0x01`-`0x4b`, `OP_PUSHDATA1`, `OP_PUSHDATA2`, `OP_PUSHDATA4`). Your parser must handle all of these, not just assume a single direct push. Multiple push operations after `OP_RETURN` are concatenated.
-
----
-
-## Script classification (inputs)
-
-Classify each input's spend type into a `script_type` field on every `vin[]` entry:
-
-- `p2pkh`
-- `p2sh-p2wpkh`
-- `p2sh-p2wsh`
-- `p2wpkh`
-- `p2wsh`
-- `p2tr_keypath`
-- `p2tr_scriptpath`
-- `unknown`
-
-Also add `address` to each `vin[]` entry, derived from the prevout scriptPubKey using the same rules as output addresses.
-
----
-
-## Script disassembly
-
-Add a `script_asm` field to:
-- Each `vout[]` (disassembly of `script_pubkey_hex`)
-- Each `vin[]` (disassembly of `script_sig_hex`)
-
-**Format:** space-separated tokens. Opcodes use their standard names (`OP_DUP`, `OP_HASH160`, `OP_CHECKSIG`, etc.). Data pushes are rendered as `OP_PUSHBYTES_<n> <hex>` for direct pushes (`0x01`-`0x4b`), `OP_PUSHDATA1 <hex>` / `OP_PUSHDATA2 <hex>` / `OP_PUSHDATA4 <hex>` for extended pushes. `OP_0` is rendered as `OP_0`. `OP_1` through `OP_16` are rendered as `OP_1`..`OP_16`. Empty scripts produce `""`.
-
-**Example:**
-```
-"script_asm": "OP_DUP OP_HASH160 OP_PUSHBYTES_20 89abcdef0123456789abcdef0123456789abcdef OP_EQUALVERIFY OP_CHECKSIG"
-```
-
-**Opcode table:** participants must support all opcodes defined in Bitcoin Core. Unknown/undefined opcodes should render as `OP_UNKNOWN_<0xNN>`.
-
-Witness items are **not** disassembled (they are raw data stack items, not scripts) — with one exception: for `p2wsh` and `p2sh-p2wsh` inputs, add a `witness_script_asm` field containing the disassembly of the last witness item (the witnessScript).
-
----
-
-## Timelock & RBF detection
-
-Add the following top-level fields to the CLI output:
-
-- `rbf_signaling`: `boolean` — whether the transaction signals BIP125 replaceability.
-- `locktime_type`: one of `"none"`, `"block_height"`, or `"unix_timestamp"`.
-- `locktime_value`: the raw locktime integer.
-
-### Per-input relative timelock (BIP68)
-
-Add a `relative_timelock` object to each `vin[]` entry with the following shape:
-
-- `{ "enabled": false }` — when relative timelock is disabled. Omit `type` and `value`.
-- `{ "enabled": true, "type": "blocks", "value": <blocks> }` — block-based relative lock.
-- `{ "enabled": true, "type": "time", "value": <seconds> }` — time-based relative lock.
-
----
-
-## Weight / vbytes rules
-
-Compute `size_bytes`, `weight`, and `vbytes` according to BIP141.
-
----
-
-## Witness discount analysis
-
-For SegWit transactions, add a `segwit_savings` object to the top-level output with the following fields:
-
-- `witness_bytes`
-- `non_witness_bytes`
-- `total_bytes`
-- `weight_actual`
-- `weight_if_legacy`
-- `savings_pct` (rounded to 2 decimal places)
-
-For non-SegWit transactions, `segwit_savings` must be `null`.
-
-Refer to BIP141 for how witness and non-witness bytes are defined and weighted.
-
----
-
-## Warnings (required codes)
-
-Emit warning codes when:
-
-- `HIGH_FEE`: if `fee_sats > 1_000_000` OR `fee_rate_sat_vb > 200`
-- `DUST_OUTPUT`: any non-`op_return` output has `value_sats < 546`
-- `UNKNOWN_OUTPUT_SCRIPT`: any output has `script_type == "unknown"`
-- `RBF_SIGNALING`: if `rbf_signaling` is `true`
-
-You may add more warnings, but these codes must be present when applicable.
-
----
-
-## Web visualizer requirements (candidate-facing)
-
-Your web app must:
-
-- Provide a **single-page transaction visualizer** that can analyze a fixture transaction and explain it in plain English.
-- Use visuals: diagrams, annotations, callouts, color-coding, etc.
-- Make it understandable for non-technical users (avoid jargon or define it inline).
-
-Recommended UX (not strictly required, but strongly encouraged):
-
-- A "story" view: **What happened?** -> **Who paid whom?** -> **What did it cost?** -> **Is anything risky?**
-- A visual graph:
-  - Inputs on the left, outputs on the right, arrows connecting the "value flow"
-  - Highlight fee as a "missing slice" (inputs minus outputs)
-- Tooltips for terms like "input", "output", "fee", "vbytes", "SegWit", "OP_RETURN"
-- One-click "show technical details" section for hex/script fields
-- Good defaults for non-technical users: hide raw hex until requested
-
-Minimum functional requirements:
-
-1. A way to load a transaction fixture (paste the JSON fixture contents OR paste `raw_tx` hex and `prevouts`).
-2. A way to upload block files (`blk*.dat`, `rev*.dat`, `xor.dat`) for block-mode analysis.
-3. A rendered view that includes (visibly):
-   - `txid`
-   - fee and feerate
-   - number of inputs and outputs
-   - script type labels per output (e.g. "P2WPKH", "Taproot", "OP_RETURN")
-4. For block mode: a block overview showing tx count, total fees, and a transaction list that can be expanded to see individual tx analysis.
-5. Must not require external internet access to function once dependencies are installed.
-6. Must expose a health endpoint: `GET /api/health` -> `200` with JSON `{ "ok": true }`.
-
----
-
-## Sample tests
-
-Public fixtures will be provided in `fixtures/`.
-
-Example:
+Start the web server:
 
 ```bash
-cli.sh fixtures/transactions/tx_legacy_p2pkh.json
+./web.sh
 ```
 
-The public fixtures are examples only; the evaluator will run a broad set of additional (hidden) fixtures. Build your analyzer to be correct and resilient according to the Bitcoin transaction format and the contract above.
+Opens at `http://127.0.0.1:3000` (honors the `PORT` environment variable).
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check — returns `{ "ok": true }` |
+| `/api/analyze` | POST | Analyze a transaction (JSON body with `raw_tx` + `prevouts`) |
+| `/api/analyze-block` | POST | Analyze a block (multipart upload of `.dat` files) |
+
+### Tabs
+
+- **Transaction** — paste raw hex + prevouts, or a full fixture JSON. Click "Analyze" to see the full breakdown.
+- **Block** — upload or paste `blk*.dat`, `rev*.dat`, and `xor.dat` files to explore an entire block.
+- **Compare** — load two transactions side-by-side and compare fees, sizes, efficiency, and more.
 
 ---
 
-## Acceptance criteria (definitive)
+## Architecture
 
-- `cli.sh` succeeds on all provided fixtures
-- CLI JSON report matches the required schema and rules (txid/wtxid, vbytes/weight, fees, script classification, warnings, timelocks, script disassembly, segwit savings)
-- Web app launches via `web.sh` and serves the required API (`/api/health`, `/api/analyze`)
-- Errors are returned as structured JSON with non-empty `error.code` and `error.message`
-- Demo video link is included in `demo.md` at the repository root (the file should contain only the link):
-  - **Where to upload:** YouTube, Loom, or Google Drive. The link must be viewable by evaluators without requesting access (public or unlisted is fine; no "request access" links).
-  - **What to record:** a screen recording of your **web UI** walkthrough (no code walkthrough; don't spend time scrolling through source files).
-  - **What to demonstrate:** use your UI to analyze **one** real transaction or provided fixture and visually point to the parts as you explain them.
-  - **How to explain:** speak as if to a non-technical person who has never seen Bitcoin before; use simple language and define terms as you introduce them.
-  - **Topics your walkthrough must cover (using the UI):**
-    - what a transaction "is" at a high level (moving value by spending old outputs and creating new outputs)
-    - inputs (what is being spent) and outputs (who is receiving)
-    - fee and fee rate (why it exists; inputs minus outputs)
-    - weight/vbytes (why transaction "size" matters for fees)
-    - SegWit vs legacy at a high level (where witness data fits; what changes between txid and wtxid)
-    - script/address types shown in your UI (P2PKH / P2SH / P2WPKH / P2WSH / P2TR / OP_RETURN) and what they mean in plain terms
-    - RBF signaling: what it means for a transaction to be replaceable, and how nSequence controls it
-    - timelocks: absolute vs relative, and what they prevent
-    - SegWit discount visualization: a side-by-side or overlay showing actual weight vs hypothetical legacy weight
-    - any warnings your UI shows (e.g., dust, high fee, unknown script, RBF)
-  - **Hard limit:** the video must be strictly **less than 2 minutes** long.
+```
+chain-lens-core/       Rust library + CLI binary
+├── parser.rs          Raw transaction byte parsing
+├── classify.rs        Script type classification & address derivation
+├── disasm.rs          Script disassembly to ASM
+├── accounting.rs      Fee & value accounting
+├── segwit.rs          SegWit savings analysis
+├── timelock.rs        Absolute & relative timelock detection
+├── op_return.rs       OP_RETURN payload decoding
+├── warnings.rs        Warning generation
+├── block_parser.rs    Block header & transaction parsing from .dat files
+├── undo.rs            Bitcoin Core undo data parsing
+├── xor.rs             XOR key decoding
+├── merkle.rs          Merkle root computation & verification
+└── main.rs            CLI entry point
 
----
+chain-lens-server/     Axum HTTP server
+└── main.rs            REST API + static file serving
 
-## Hidden fixture categories
-
-The evaluator will test with fixtures covering (but not limited to) the following scenarios. You do not need to create these fixtures yourself, but your implementation must handle all of them correctly:
-
-- Taproot keypath spend (1 witness item, 64 bytes)
-- Taproot scriptpath spend (witness with script, control block starting with `0xc0`/`0xc1`)
-- P2SH-P2WPKH input (nested SegWit)
-- P2SH-P2WSH input (nested SegWit multisig)
-- P2WSH input with complex witnessScript
-- Transaction with RBF signaling (`sequence = 0xFFFFFFFD`)
-- Transaction with relative timelock (BIP68 -- blocks-based)
-- Transaction with relative timelock (BIP68 -- time-based)
-- Transaction with absolute locktime (block height)
-- Transaction with absolute locktime (unix timestamp)
-- OP_RETURN with `OP_PUSHDATA1`
-- OP_RETURN with multiple pushes
-- OP_RETURN with Omni prefix
-- OP_RETURN with non-UTF8 binary data
-- A small raw block with undo file (e.g., a real mainnet block with 5-10 transactions)
-- A block with invalid merkle root (should error)
-- A block with truncated/malformed undo data (should error)
-- A block with undo data containing compressed P2PK scripts (nSize 2/3 and 4/5)
-- A block with undo data using special-type compression (nSize 0 = P2PKH, nSize 1 = P2SH)
-- A block with undo data containing raw scripts (nSize >= 6)
-- Transaction with all inputs having disabled relative timelocks (bit 31 set)
-- Transaction mixing RBF-signaling and non-signaling inputs
+web/                   React/TypeScript frontend (Vite)
+├── App.tsx            Main shell with tab navigation & theme switcher
+├── TransactionLoader  Input forms for raw hex / fixture JSON
+├── TransactionVisualizer  Full transaction breakdown with story mode
+├── TransactionFlowDiagram  SVG Sankey-style value flow
+├── BlockVisualizer    Block dashboard with merkle tree, histograms, version bits
+└── TransactionComparison  Side-by-side transaction comparison
+```
 
 ---
 
-## Evaluation criteria
+## Tech Stack
 
-Evaluation happens in two phases:
-
-### Phase 1: Automated evaluation (before deadline)
-
-- **CLI correctness:** your `cli.sh` will be run against all public fixtures.
-- **Block parsing:** block-mode invocations will be tested with real mainnet block files.
-- **Web health check:** `web.sh` must start successfully and respond to `GET /api/health` with `200 { "ok": true }`.
-- **Error handling:** invalid inputs must produce structured error JSON (`{ "ok": false, "error": { "code": "...", "message": "..." } }`) and exit code `1`.
-
-### Phase 2: Manual evaluation (after deadline)
-
-- **Hidden fixtures:** your CLI will be tested against a broad set of hidden fixtures covering the scenarios listed above.
-- **Web UI quality:** clarity of explanations, visual design, diagrams, and how well the UI teaches non-technical users about Bitcoin transactions.
-- **Demo video:** evaluated for coverage of required topics, clarity of explanation, and adherence to the 2-minute time limit.
-- **Code quality:** readability, structure, and appropriate use of abstractions.
-
----
-
-## Plagiarism policy
-
-- All submitted code must be your own original work. You may use AI coding assistants (e.g. GitHub Copilot, ChatGPT, Claude) as tools, but you must understand and be able to explain every part of your submission.
-- Copying code from other participants' submissions (current or past cohorts) is strictly prohibited.
-- Using open-source libraries and referencing public documentation (BIPs, Bitcoin wiki, Stack Exchange, etc.) is encouraged — that is research, not plagiarism.
-- Submissions will be checked for similarity against other participants. If two or more submissions share substantially identical logic or structure beyond what would arise from following the spec, all involved submissions may be disqualified.
-- If you are unsure whether something counts as plagiarism, ask before submitting.
+- **Backend:** Rust, Axum, Serde, sha2, bech32, bs58
+- **Frontend:** React 18, TypeScript, Vite
+- **Styling:** Custom CSS with design tokens, dark/light themes
 
