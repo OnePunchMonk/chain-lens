@@ -166,7 +166,10 @@ fn read_n(data: &[u8], offset: &mut usize, n: usize) -> Result<Vec<u8>, ChainLen
 fn read_one_txin_undo(data: &[u8], offset: &mut usize) -> Result<UndoPrevout, ChainLensError> {
     // code = height * 2 + coinbase_flag (Bitcoin Core VarInt)
     let _code = read_btc_varint(data, offset)?;
-    // No version field in modern Coin format
+
+    // NOTE: Modern Bitcoin Core (post-0.15) Coin format does NOT have a version
+    // field. The old format encoded version in the code bits, but Coin::Serialize
+    // now only writes: code, compressed_amount, compressed_script.
 
     // Compressed amount (Bitcoin Core VarInt)
     let compressed_value = read_btc_varint(data, offset)?;
