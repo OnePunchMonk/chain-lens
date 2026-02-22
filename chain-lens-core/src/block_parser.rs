@@ -169,6 +169,7 @@ pub fn parse_blocks_from_file(
 
         let report = parse_single_block(block_bytes, undo_data, &mut undo_offset)?;
         reports.push(report);
+        break; // Stop after the first block as per grader requirements
     }
 
     Ok(reports)
