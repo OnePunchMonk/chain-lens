@@ -1,17 +1,15 @@
+use serde::Serialize;
 /// Bitcoin block parser for blk*.dat files.
 ///
 /// Handles multiple blocks per file (Bitcoin Core's block file format),
-/// XOR decoding, undo file integration, merkle root verification, 
+/// XOR decoding, undo file integration, merkle root verification,
 /// coinbase detection, and BIP34 height decoding.
-
 use sha2::{Digest, Sha256};
-use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::error::ChainLensError;
-use crate::merkle::compute_merkle_root;
+use crate::merkle::{build_merkle_tree, compute_merkle_root, MerkleTree};
 use crate::parser::{parse_transaction_inner, read_varint, Prevout};
-
 
 const BLOCK_MAGIC: u32 = 0xD9B4BEF9; // mainnet magic bytes
 
@@ -23,7 +21,9 @@ fn sha256d(data: &[u8]) -> [u8; 32] {
 
 fn read_u32_le(bytes: &[u8], offset: &mut usize) -> Result<u32, ChainLensError> {
     if *offset + 4 > bytes.len() {
-        return Err(ChainLensError::InvalidTx("block data truncated (u32)".into()));
+        return Err(ChainLensError::InvalidTx(
+            "block data truncated (u32)".into(),
+        ));
     }
     let val = u32::from_le_bytes(bytes[*offset..*offset + 4].try_into().unwrap());
     *offset += 4;
@@ -43,6 +43,13 @@ fn read_bytes_n(bytes: &[u8], offset: &mut usize, n: usize) -> Result<Vec<u8>, C
 }
 
 #[derive(Debug, Serialize)]
+pub struct VersionBit {
+    pub bit: u8,
+    pub name: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct BlockHeader {
     pub version: i32,
     pub prev_block_hash: String,
@@ -52,6 +59,7 @@ pub struct BlockHeader {
     pub bits: String,
     pub nonce: u32,
     pub block_hash: String,
+    pub version_bits: Vec<VersionBit>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +97,29 @@ pub struct BlockReport {
     pub coinbase: CoinbaseInfo,
     pub transactions: Vec<serde_json::Value>,
     pub block_stats: BlockStats,
+    pub merkle_tree: MerkleTree,
+}
+
+/// Known BIP9 softfork deployments and their version bit assignments.
+fn decode_version_bits(version: i32) -> Vec<VersionBit> {
+    // BIP9 uses bits 0-28 for signaling; bit 29-31 must be 001 for BIP9
+    let known_bits: &[(u8, &str)] = &[
+        (0, "csv"),     // BIP68/112/113 — CheckSequenceVerify
+        (1, "segwit"),  // BIP141/143/147 — Segregated Witness
+        (2, "taproot"), // BIP340/341/342 — Schnorr + Taproot
+        (4, "ctv"),     // BIP119 — OP_CHECKTEMPLATEVERIFY (proposed)
+    ];
+    known_bits
+        .iter()
+        .map(|(bit, name)| {
+            let mask = 1i32 << *bit;
+            VersionBit {
+                bit: *bit,
+                name: name.to_string(),
+                active: (version & mask) != 0,
+            }
+        })
+        .collect()
 }
 
 /// Parse all blocks from a blk*.dat byte buffer along with undo data.
@@ -106,9 +137,8 @@ pub fn parse_blocks_from_file(
             break;
         }
         // Check for magic bytes (mainnet: 0xF9BEB4D9, little-endian)
-        let magic_candidate = u32::from_le_bytes(
-            blk_data[blk_offset..blk_offset + 4].try_into().unwrap()
-        );
+        let magic_candidate =
+            u32::from_le_bytes(blk_data[blk_offset..blk_offset + 4].try_into().unwrap());
         if magic_candidate == 0 {
             blk_offset += 1;
             continue;
@@ -120,10 +150,11 @@ pub fn parse_blocks_from_file(
         blk_offset += 4;
 
         // Block size
-        if blk_offset + 4 > blk_data.len() { break; }
-        let block_size = u32::from_le_bytes(
-            blk_data[blk_offset..blk_offset + 4].try_into().unwrap()
-        ) as usize;
+        if blk_offset + 4 > blk_data.len() {
+            break;
+        }
+        let block_size =
+            u32::from_le_bytes(blk_data[blk_offset..blk_offset + 4].try_into().unwrap()) as usize;
         blk_offset += 4;
 
         if blk_offset + block_size > blk_data.len() {
@@ -152,7 +183,9 @@ fn parse_single_block(
 
     // ── Block header (80 bytes) ──
     if block_bytes.len() < 80 {
-        return Err(ChainLensError::ParseError("block too small for header".into()));
+        return Err(ChainLensError::ParseError(
+            "block too small for header".into(),
+        ));
     }
     let header_bytes = &block_bytes[offset..offset + 80];
     offset += 80;
@@ -171,7 +204,8 @@ fn parse_single_block(
     // prev_block_hash: reversed for display
     let prev_block_hash = hex::encode(prev_hash_raw.iter().rev().copied().collect::<Vec<u8>>());
     // merkle_root: reversed for display
-    let merkle_root_header = hex::encode(merkle_root_raw.iter().rev().copied().collect::<Vec<u8>>());
+    let merkle_root_header =
+        hex::encode(merkle_root_raw.iter().rev().copied().collect::<Vec<u8>>());
 
     let bits = format!("{:08x}", bits_raw);
 
@@ -205,6 +239,9 @@ fn parse_single_block(
         let txid = compute_txid(raw_tx_bytes);
         txid_bytes_list.push(txid);
     }
+
+    // ── Build full merkle tree ──
+    let merkle_tree = build_merkle_tree(&txid_bytes_list);
 
     // ── Verify merkle root ──
     let computed_root = compute_merkle_root(&txid_bytes_list);
@@ -287,6 +324,8 @@ fn parse_single_block(
         0.0
     };
 
+    let version_bits = decode_version_bits(version);
+
     let block_header = BlockHeader {
         version,
         prev_block_hash,
@@ -296,6 +335,7 @@ fn parse_single_block(
         bits,
         nonce,
         block_hash,
+        version_bits,
     };
 
     let block_stats = BlockStats {
@@ -321,6 +361,7 @@ fn parse_single_block(
         coinbase: coinbase_info,
         transactions: parsed_txs,
         block_stats,
+        merkle_tree,
     })
 }
 
@@ -371,7 +412,9 @@ fn extract_raw_tx(block_bytes: &[u8], offset: &mut usize) -> Result<Vec<u8>, Cha
     *offset += 4; // locktime
 
     if *offset > block_bytes.len() {
-        return Err(ChainLensError::ParseError("tx ran past block boundary".into()));
+        return Err(ChainLensError::ParseError(
+            "tx ran past block boundary".into(),
+        ));
     }
     Ok(block_bytes[start..*offset].to_vec())
 }
@@ -393,7 +436,9 @@ fn compute_txid(raw_tx: &[u8]) -> [u8; 32] {
 fn build_base_bytes(tx: &[u8]) -> Result<Vec<u8>, ()> {
     let mut base = Vec::new();
 
-    if tx.len() < 4 { return Err(()); }
+    if tx.len() < 4 {
+        return Err(());
+    }
     base.extend_from_slice(&tx[0..4]);
     let mut offset = 4usize;
 
@@ -408,15 +453,21 @@ fn build_base_bytes(tx: &[u8]) -> Result<Vec<u8>, ()> {
     base.extend_from_slice(&encode_varint_simple(in_count));
 
     for _ in 0..in_count {
-        if offset + 36 > tx.len() { return Err(()); }
+        if offset + 36 > tx.len() {
+            return Err(());
+        }
         base.extend_from_slice(&tx[offset..offset + 36]);
         offset += 36;
         let sl = read_varint_simple(tx, &mut offset).ok_or(())?;
         base.extend_from_slice(&encode_varint_simple(sl));
-        if offset + sl as usize > tx.len() { return Err(()); }
+        if offset + sl as usize > tx.len() {
+            return Err(());
+        }
         base.extend_from_slice(&tx[offset..offset + sl as usize]);
         offset += sl as usize;
-        if offset + 4 > tx.len() { return Err(()); }
+        if offset + 4 > tx.len() {
+            return Err(());
+        }
         base.extend_from_slice(&tx[offset..offset + 4]);
         offset += 4;
     }
@@ -424,12 +475,16 @@ fn build_base_bytes(tx: &[u8]) -> Result<Vec<u8>, ()> {
     let out_count = read_varint_simple(tx, &mut offset).ok_or(())?;
     base.extend_from_slice(&encode_varint_simple(out_count));
     for _ in 0..out_count {
-        if offset + 8 > tx.len() { return Err(()); }
+        if offset + 8 > tx.len() {
+            return Err(());
+        }
         base.extend_from_slice(&tx[offset..offset + 8]);
         offset += 8;
         let sl = read_varint_simple(tx, &mut offset).ok_or(())?;
         base.extend_from_slice(&encode_varint_simple(sl));
-        if offset + sl as usize > tx.len() { return Err(()); }
+        if offset + sl as usize > tx.len() {
+            return Err(());
+        }
         base.extend_from_slice(&tx[offset..offset + sl as usize]);
         offset += sl as usize;
     }
@@ -445,33 +500,48 @@ fn build_base_bytes(tx: &[u8]) -> Result<Vec<u8>, ()> {
         }
     }
 
-    if offset + 4 > tx.len() { return Err(()); }
+    if offset + 4 > tx.len() {
+        return Err(());
+    }
     base.extend_from_slice(&tx[offset..offset + 4]);
 
     Ok(base)
 }
 
 fn read_varint_simple(data: &[u8], offset: &mut usize) -> Option<u64> {
-    if *offset >= data.len() { return None; }
+    if *offset >= data.len() {
+        return None;
+    }
     let b = data[*offset];
     *offset += 1;
     Some(match b {
         0x00..=0xfc => b as u64,
         0xfd => {
-            if *offset + 2 > data.len() { return None; }
+            if *offset + 2 > data.len() {
+                return None;
+            }
             let v = u16::from_le_bytes([data[*offset], data[*offset + 1]]);
             *offset += 2;
             v as u64
         }
         0xfe => {
-            if *offset + 4 > data.len() { return None; }
-            let v = u32::from_le_bytes([data[*offset], data[*offset+1], data[*offset+2], data[*offset+3]]);
+            if *offset + 4 > data.len() {
+                return None;
+            }
+            let v = u32::from_le_bytes([
+                data[*offset],
+                data[*offset + 1],
+                data[*offset + 2],
+                data[*offset + 3],
+            ]);
             *offset += 4;
             v as u64
         }
         _ => {
-            if *offset + 8 > data.len() { return None; }
-            let v = u64::from_le_bytes(data[*offset..*offset+8].try_into().ok()?);
+            if *offset + 8 > data.len() {
+                return None;
+            }
+            let v = u64::from_le_bytes(data[*offset..*offset + 8].try_into().ok()?);
             *offset += 8;
             v
         }
@@ -479,10 +549,21 @@ fn read_varint_simple(data: &[u8], offset: &mut usize) -> Option<u64> {
 }
 
 fn encode_varint_simple(n: u64) -> Vec<u8> {
-    if n <= 0xfc { vec![n as u8] }
-    else if n <= 0xffff { let mut v = vec![0xfd]; v.extend_from_slice(&(n as u16).to_le_bytes()); v }
-    else if n <= 0xffffffff { let mut v = vec![0xfe]; v.extend_from_slice(&(n as u32).to_le_bytes()); v }
-    else { let mut v = vec![0xff]; v.extend_from_slice(&n.to_le_bytes()); v }
+    if n <= 0xfc {
+        vec![n as u8]
+    } else if n <= 0xffff {
+        let mut v = vec![0xfd];
+        v.extend_from_slice(&(n as u16).to_le_bytes());
+        v
+    } else if n <= 0xffffffff {
+        let mut v = vec![0xfe];
+        v.extend_from_slice(&(n as u32).to_le_bytes());
+        v
+    } else {
+        let mut v = vec![0xff];
+        v.extend_from_slice(&n.to_le_bytes());
+        v
+    }
 }
 
 /// Extract (txid_display, vout) pairs from a raw transaction's inputs.
@@ -496,7 +577,9 @@ fn extract_input_outpoints(raw_tx: &[u8]) -> Result<Vec<(String, u32)>, ChainLen
     let mut result = Vec::with_capacity(in_count);
     for _ in 0..in_count {
         if offset + 32 > raw_tx.len() {
-            return Err(ChainLensError::ParseError("truncated input outpoint".into()));
+            return Err(ChainLensError::ParseError(
+                "truncated input outpoint".into(),
+            ));
         }
         let txid_raw: [u8; 32] = raw_tx[offset..offset + 32].try_into().unwrap();
         offset += 32;
@@ -521,20 +604,28 @@ fn extract_coinbase_info(raw_tx_hex: &str) -> Result<CoinbaseInfo, ChainLensErro
     }
     let in_count = read_varint(&tx_bytes, &mut offset)?;
     if in_count != 1 {
-        return Err(ChainLensError::ParseError("coinbase must have exactly 1 input".into()));
+        return Err(ChainLensError::ParseError(
+            "coinbase must have exactly 1 input".into(),
+        ));
     }
 
     // Verify all-zero txid + 0xffffffff vout
     if offset + 36 > tx_bytes.len() {
-        return Err(ChainLensError::ParseError("coinbase input truncated".into()));
+        return Err(ChainLensError::ParseError(
+            "coinbase input truncated".into(),
+        ));
     }
     let txid_area = &tx_bytes[offset..offset + 32];
     if txid_area.iter().any(|b| *b != 0) {
-        return Err(ChainLensError::ParseError("coinbase input txid not all-zero".into()));
+        return Err(ChainLensError::ParseError(
+            "coinbase input txid not all-zero".into(),
+        ));
     }
     let vout = u32::from_le_bytes(tx_bytes[offset + 32..offset + 36].try_into().unwrap());
     if vout != 0xffffffff {
-        return Err(ChainLensError::ParseError("coinbase input vout not 0xffffffff".into()));
+        return Err(ChainLensError::ParseError(
+            "coinbase input vout not 0xffffffff".into(),
+        ));
     }
     offset += 36;
 
@@ -552,7 +643,9 @@ fn extract_coinbase_info(raw_tx_hex: &str) -> Result<CoinbaseInfo, ChainLensErro
     let out_count = read_varint(&tx_bytes, &mut offset)? as usize;
     let mut total_output_sats = 0u64;
     for _ in 0..out_count {
-        if offset + 8 > tx_bytes.len() { break; }
+        if offset + 8 > tx_bytes.len() {
+            break;
+        }
         let v = u64::from_le_bytes(tx_bytes[offset..offset + 8].try_into().unwrap());
         total_output_sats += v;
         offset += 8;
@@ -560,13 +653,19 @@ fn extract_coinbase_info(raw_tx_hex: &str) -> Result<CoinbaseInfo, ChainLensErro
         offset += sl;
     }
 
-    Ok(CoinbaseInfo { bip34_height, coinbase_script_hex, total_output_sats })
+    Ok(CoinbaseInfo {
+        bip34_height,
+        coinbase_script_hex,
+        total_output_sats,
+    })
 }
 
 /// Decode BIP34 block height from coinbase scriptSig.
 /// Format: OP_PUSHBYTES_N <height as little-endian bytes>
 fn decode_bip34_height(script: &[u8]) -> Option<u64> {
-    if script.is_empty() { return None; }
+    if script.is_empty() {
+        return None;
+    }
     let push_len = script[0] as usize;
     if push_len == 0 || push_len > 8 || push_len + 1 > script.len() {
         return None;
@@ -612,11 +711,13 @@ fn parse_block_undo_at(
         // We found mainnet magic bytes! This is definitely a Bitcoin Core envelope.
         // Even if size is missing or trailing hash is absent, we must skip the 8-byte header.
         *offset += 8;
-        
+
         if *offset + size > undo_data.len() {
             return Err(ChainLensError::ParseError(format!(
                 "undo envelope size {} exceeds remaining data {} at offset {}",
-                size, undo_data.len() - *offset, *offset
+                size,
+                undo_data.len() - *offset,
+                *offset
             )));
         }
 
@@ -624,15 +725,15 @@ fn parse_block_undo_at(
         let block_undo_slice = &undo_data[*offset..*offset + size];
         let mut local_off = 0usize;
         let result = crate::undo::parse_block_undo(block_undo_slice, &mut local_off, n_txs);
-        
+
         // Advance global offset past the data
         *offset += size;
-        
+
         // Skip the constant 32-byte hash if it exists (CBlockUndo records are followed by a hash)
         if *offset + 32 <= undo_data.len() {
             *offset += 32;
         }
-        
+
         result
     } else {
         // No magic bytes found; assume raw CBlockUndo data (used in some test fixtures/versions)

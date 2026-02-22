@@ -698,3 +698,196 @@ textarea:focus, input:focus, select:focus {
   .header { position: static; }
   .btn { display: none; }
 }
+
+/* ── Merkle Tree ─────────────────────────────────────────────────── */
+.merkle-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px;
+  background: rgba(0,0,0,0.15);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.merkle-layer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.merkle-layer-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.merkle-layer-nodes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.merkle-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  transition: all var(--transition);
+  cursor: default;
+  font-family: 'JetBrains Mono', monospace;
+}
+.merkle-node:hover {
+  background: var(--surface3);
+  border-color: var(--accent);
+}
+.merkle-connectors {
+  display: flex;
+  justify-content: center;
+}
+
+/* ── Version Bits ─────────────────────────────────────────────────── */
+.version-bits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 4px;
+}
+.version-bit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  transition: all var(--transition);
+  cursor: default;
+}
+.version-bit:hover {
+  border-color: var(--accent);
+}
+.version-bit-active {
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.4);
+}
+.version-bit-known {
+  border-color: rgba(139,92,246,0.4);
+}
+.version-bit-known.version-bit-active {
+  background: rgba(34,197,94,0.15);
+  border-color: rgba(34,197,94,0.5);
+}
+.version-bit-num {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.version-bit-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text);
+}
+.version-bit-active .version-bit-val {
+  color: var(--green);
+}
+.version-bit-name {
+  font-size: 8px;
+  color: var(--purple);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Transaction Comparison ───────────────────────────────────────── */
+.compare-header,
+.compare-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 40px 1fr;
+  gap: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.compare-header {
+  background: var(--surface2);
+  font-weight: 600;
+  font-size: 12px;
+}
+.compare-row {
+  font-size: 13px;
+  transition: background var(--transition);
+}
+.compare-row:hover {
+  background: var(--surface2);
+}
+.compare-row-diff {
+  background: rgba(59,130,246,0.03);
+}
+.compare-label {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-right: 1px solid var(--border);
+}
+.compare-cell {
+  padding: 10px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.compare-cell-a {
+  border-right: 1px solid var(--border);
+}
+.compare-cell-b {
+  border-left: 1px solid var(--border);
+}
+.compare-diff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  padding: 4px;
+}
+.compare-winner {
+  background: rgba(34,197,94,0.08);
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* ── Light theme overrides for new components ─────────────────────── */
+.theme-light .merkle-tree-container {
+  background: rgba(0,0,0,0.03);
+}
+.theme-light .merkle-node:hover {
+  background: hsl(220, 14%, 90%);
+}
+.theme-light .version-bit:hover {
+  border-color: var(--accent);
+}
+.theme-light .compare-row:hover {
+  background: hsl(220, 14%, 95%);
+}
+.theme-light .compare-row-diff {
+  background: rgba(59,130,246,0.05);
+}
+.theme-light .compare-winner {
+  background: rgba(34,197,94,0.1);
+}

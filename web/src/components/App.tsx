@@ -2,9 +2,10 @@ import React, { useRef, useState, useEffect } from 'react';
 import '../styles/index.css';
 import { TransactionLoader } from './TransactionLoader';
 import { BlockVisualizer } from './BlockVisualizer';
+import { TransactionComparison } from './TransactionComparison';
 import { analyzeBlock, getErrorEli5 } from '../utils/api';
 
-type Tab = 'tx' | 'block';
+type Tab = 'tx' | 'block' | 'compare';
 type Theme = 'dark' | 'light' | 'system';
 
 /** Read a File and return its contents as a lowercase hex string. */
@@ -143,12 +144,15 @@ export default function App() {
                 >
                     {themeIcon} {themeLabel}
                 </button>
-                <div className="tabs" style={{ width: 280 }}>
+                <div className="tabs" style={{ width: 380 }}>
                     <button className={`tab ${tab === 'tx' ? 'active' : ''}`} onClick={() => setTab('tx')}>
                         <span style={{ marginRight: 6 }}>◉</span> Transaction
                     </button>
                     <button className={`tab ${tab === 'block' ? 'active' : ''}`} onClick={() => setTab('block')}>
                         <span style={{ marginRight: 6 }}>▣</span> Block
+                    </button>
+                    <button className={`tab ${tab === 'compare' ? 'active' : ''}`} onClick={() => setTab('compare')}>
+                        <span style={{ marginRight: 6 }}>⇆</span> Compare
                     </button>
                 </div>
             </header>
@@ -156,6 +160,8 @@ export default function App() {
             {/* ── Main content ── */}
             <main className="page">
                 {tab === 'tx' && <TransactionLoader />}
+
+                {tab === 'compare' && <TransactionComparison />}
 
                 {tab === 'block' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

@@ -2,6 +2,26 @@ import React, { useState, useMemo } from 'react';
 import { formatSats, short, downloadJson, copyJsonToClipboard, TERM_ELI5 } from '../utils/api';
 import { TransactionVisualizer } from './TransactionVisualizer';
 
+interface MerkleNode {
+    hash: string;
+    duplicated: boolean;
+}
+
+interface MerkleLayer {
+    nodes: MerkleNode[];
+}
+
+interface MerkleTree {
+    layers: MerkleLayer[];
+    root: string;
+}
+
+interface VersionBit {
+    bit: number;
+    name: string;
+    active: boolean;
+}
+
 interface BlockHeader {
     version: number;
     prev_block_hash: string;
@@ -11,6 +31,7 @@ interface BlockHeader {
     bits: string;
     nonce: number;
     block_hash: string;
+    version_bits?: VersionBit[];
 }
 
 interface CoinbaseInfo {
@@ -34,6 +55,7 @@ interface BlockReport {
     coinbase: CoinbaseInfo;
     transactions: any[];
     block_stats: BlockStats;
+    merkle_tree?: MerkleTree;
 }
 
 function formatTs(ts: number): string {
@@ -158,6 +180,174 @@ function FeeRateHistogram({ buckets }: { buckets: FeeRateBucket[] }) {
     );
 }
 
+// ─── Merkle Tree Visualization ───────────────────────────────────────────────
+function MerkleTreeVisualization({ tree, valid }: { tree: MerkleTree; valid: boolean }) {
+    const [hoveredHash, setHoveredHash] = useState<string | null>(null);
+    // Show tree bottom-up: root at top, leaves at bottom
+    const reversedLayers = useMemo(() => [...tree.layers].reverse(), [tree.layers]);
+    const maxNodesInLayer = Math.max(...tree.layers.map(l => l.nodes.length), 1);
+    // For large trees, only show abbreviated view
+    const isBig = maxNodesInLayer > 16;
+
+    if (tree.layers.length === 0) return null;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="section-title">Merkle tree</div>
+            <div className="eli5-callout" style={{
+                padding: '8px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
+                borderRadius: 8, fontSize: 12, marginBottom: 4,
+            }}>
+                <strong>ELI5:</strong> The Merkle tree is like a fingerprint pyramid — each level combines pairs of hashes until you get a single root. If anyone tampers with a transaction, the root changes.
+            </div>
+            <div className="merkle-tree-container">
+                {reversedLayers.map((layer, layerIdx) => {
+                    const depth = reversedLayers.length - 1 - layerIdx;
+                    const isRoot = layerIdx === 0;
+                    const isLeaves = layerIdx === reversedLayers.length - 1;
+                    const label = isRoot ? 'Root' : isLeaves ? 'Leaves (txids)' : `Level ${depth}`;
+                    return (
+                        <div key={layerIdx} className="merkle-layer">
+                            <div className="merkle-layer-label">{label}</div>
+                            <div className="merkle-layer-nodes" style={{
+                                justifyContent: layer.nodes.length <= 8 ? 'center' : 'flex-start',
+                            }}>
+                                {isBig && layer.nodes.length > 16 ? (
+                                    <>
+                                        {layer.nodes.slice(0, 4).map((node, ni) => (
+                                            <MerkleNodeBox key={ni} node={node} isRoot={isRoot} valid={valid}
+                                                hovered={hoveredHash === node.hash}
+                                                onHover={setHoveredHash} />
+                                        ))}
+                                        <span style={{ alignSelf: 'center', color: 'var(--text-dim)', fontSize: 12, padding: '0 4px' }}>
+                                            … {layer.nodes.length - 8} more …
+                                        </span>
+                                        {layer.nodes.slice(-4).map((node, ni) => (
+                                            <MerkleNodeBox key={`e${ni}`} node={node} isRoot={isRoot} valid={valid}
+                                                hovered={hoveredHash === node.hash}
+                                                onHover={setHoveredHash} />
+                                        ))}
+                                    </>
+                                ) : (
+                                    layer.nodes.map((node, ni) => (
+                                        <MerkleNodeBox key={ni} node={node} isRoot={isRoot} valid={valid}
+                                            hovered={hoveredHash === node.hash}
+                                            onHover={setHoveredHash} />
+                                    ))
+                                )}
+                            </div>
+                            {/* Connecting lines */}
+                            {layerIdx < reversedLayers.length - 1 && (
+                                <div className="merkle-connectors" style={{ height: 16, position: 'relative' }}>
+                                    <svg width="100%" height="16" style={{ display: 'block' }}>
+                                        <line x1="50%" y1="0" x2="50%" y2="16"
+                                            stroke="var(--border)" strokeWidth="1" strokeDasharray="3 2" />
+                                    </svg>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic', marginTop: 4 }}>
+                🔧 Details for nerds: {tree.layers.length} levels, {tree.layers[0]?.nodes.length ?? 0} leaves. Duplicate markers (⬆) show where Bitcoin's odd-length duplication rule applied.
+            </div>
+        </div>
+    );
+}
+
+function MerkleNodeBox({ node, isRoot, valid, hovered, onHover }: {
+    node: MerkleNode; isRoot: boolean; valid: boolean;
+    hovered: boolean; onHover: (h: string | null) => void;
+}) {
+    const borderColor = isRoot
+        ? (valid ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)')
+        : node.duplicated
+            ? 'rgba(251,191,36,0.4)'
+            : 'var(--border)';
+    const bg = isRoot
+        ? (valid ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)')
+        : hovered ? 'var(--surface3)' : 'var(--surface2)';
+    return (
+        <div
+            className="merkle-node"
+            style={{ borderColor, background: bg }}
+            onMouseEnter={() => onHover(node.hash)}
+            onMouseLeave={() => onHover(null)}
+            title={node.hash}
+        >
+            <code style={{ fontSize: 10, color: isRoot ? (valid ? 'var(--green)' : 'var(--red)') : 'var(--accent)' }}>
+                {node.hash.slice(0, 8)}…
+            </code>
+            {node.duplicated && <span style={{ fontSize: 9, color: 'var(--amber)' }} title="Duplicated (odd-level)">⬆</span>}
+            {isRoot && <span style={{ fontSize: 9, color: valid ? 'var(--green)' : 'var(--red)' }}>
+                {valid ? '✓' : '✗'}
+            </span>}
+        </div>
+    );
+}
+
+// ─── BIP9 Version Bits Panel ─────────────────────────────────────────────────
+function VersionBitsPanel({ versionBits, version }: { versionBits: VersionBit[]; version: number }) {
+    // BIP9: top 3 bits should be 001 (version >= 0x20000000)
+    const isBip9 = (version & 0xE0000000) === 0x20000000;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="section-title">BIP9 Version bits</div>
+            <div className="eli5-callout" style={{
+                padding: '8px 12px', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
+                borderRadius: 8, fontSize: 12, marginBottom: 4,
+            }}>
+                <strong>ELI5:</strong> Version bits are like voting flags — miners set specific bits in the block version to signal support for proposed upgrades (soft forks).
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+                <span className={`badge ${isBip9 ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 11 }}>
+                    {isBip9 ? '✓ BIP9 compatible' : '— Pre-BIP9'}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                    0x{(version >>> 0).toString(16).padStart(8, '0')}
+                </span>
+            </div>
+            {/* Bit grid: show all 29 bits (0-28) */}
+            <div className="version-bits-grid">
+                {Array.from({ length: 29 }, (_, i) => {
+                    const active = (version & (1 << i)) !== 0;
+                    const known = versionBits.find(vb => vb.bit === i);
+                    return (
+                        <div key={i}
+                            className={`version-bit ${active ? 'version-bit-active' : ''} ${known ? 'version-bit-known' : ''}`}
+                            title={known ? `Bit ${i}: ${known.name} (${active ? 'signaling' : 'not signaling'})` : `Bit ${i}: ${active ? 'set' : 'unset'}`}
+                        >
+                            <span className="version-bit-num">{i}</span>
+                            <span className="version-bit-val">{active ? '1' : '0'}</span>
+                            {known && <span className="version-bit-name">{known.name}</span>}
+                        </div>
+                    );
+                })}
+            </div>
+            {/* Known softfork legend */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+                {versionBits.map(vb => (
+                    <span key={vb.bit} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                        <span style={{
+                            width: 8, height: 8, borderRadius: 2, display: 'inline-block',
+                            background: vb.active ? 'var(--green)' : 'var(--text-dim)',
+                        }} />
+                        <span style={{ color: 'var(--text-soft)', textTransform: 'capitalize' }}>{vb.name}</span>
+                        <span style={{ color: vb.active ? 'var(--green)' : 'var(--text-dim)', fontWeight: 600, fontSize: 11 }}>
+                            bit {vb.bit} {vb.active ? '✓' : '—'}
+                        </span>
+                    </span>
+                ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic', marginTop: 2 }}>
+                🔧 Details for nerds: BIP9 uses version bits 0-28 for softfork signaling. Top 3 bits (29-31) = 001 indicates BIP9 versioning.
+            </div>
+        </div>
+    );
+}
+
 function ScriptTypeChart({ summary }: { summary: Record<string, number> }) {
     const colors: Record<string, string> = {
         p2wpkh: 'var(--accent)',
@@ -214,7 +404,10 @@ function BlockSummaryCard({ report }: { report: BlockReport }) {
                 <div>
                     <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                         <span className="badge badge-green">Block</span>
-                        <span className="badge badge-gray">v{h.version}</span>
+                        <span className="badge badge-gray" title={`Version 0x${(h.version >>> 0).toString(16).padStart(8, '0')}`}>v{h.version}</span>
+                        {(h.version & 0xE0000000) === 0x20000000 && (
+                            <span className="badge badge-purple" style={{ fontSize: 10 }}>BIP9</span>
+                        )}
                         {report.coinbase.bip34_height != null && (
                             <span className="badge badge-blue">#{report.coinbase.bip34_height.toLocaleString()}</span>
                         )}
@@ -290,6 +483,20 @@ function BlockSummaryCard({ report }: { report: BlockReport }) {
                     </span>
                 </div>
             </div>
+
+            {/* Merkle tree visualization */}
+            {report.merkle_tree && report.merkle_tree.layers.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                    <MerkleTreeVisualization tree={report.merkle_tree} valid={h.merkle_root_valid} />
+                </div>
+            )}
+
+            {/* BIP9 Version Bits */}
+            {h.version_bits && h.version_bits.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                    <VersionBitsPanel versionBits={h.version_bits} version={h.version} />
+                </div>
+            )}
 
             <div style={{ marginTop: 14 }}>
                 <div className="section-title"><BlockTooltip tip={BLOCK_TERM_ELI5.prev_block}><span style={{ cursor: 'help' }}>Previous block</span></BlockTooltip></div>
