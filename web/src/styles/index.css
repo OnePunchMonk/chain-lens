@@ -553,3 +553,148 @@ textarea:focus, input:focus, select:focus {
   .header .tabs { width: 100%; }
   .tx-flow-diagram { padding: 12px; }
 }
+
+/* ── Light theme ────────────────────────────────────────────────── */
+.theme-light,
+:root:not(.theme-dark):not(.theme-light) {
+  /* skip — default is dark */
+}
+
+.theme-light {
+  --bg:           hsl(220, 20%, 97%);
+  --bg-pattern:   radial-gradient(ellipse 80% 50% at 50% -20%, hsl(220, 30%, 92%), transparent),
+                  radial-gradient(ellipse 60% 40% at 100% 100%, hsl(250, 20%, 94%), transparent);
+  --surface:      hsl(0, 0%, 100%);
+  --surface2:     hsl(220, 16%, 95%);
+  --surface3:     hsl(220, 14%, 90%);
+  --border:       hsl(220, 14%, 82%);
+  --text:         hsl(220, 20%, 14%);
+  --text-soft:    hsl(220, 12%, 44%);
+  --text-dim:     hsl(220, 10%, 62%);
+  --shadow:       0 4px 24px rgba(0,0,0,0.08);
+  --shadow-lg:    0 12px 48px rgba(0,0,0,0.12);
+}
+.theme-light .card:hover { border-color: hsl(220, 14%, 72%); }
+.theme-light .collapse-header:hover { background: hsl(220,14%,92%); }
+.theme-light .io-item:hover { background: hsl(220,14%,93%); }
+.theme-light .tooltip {
+  background: hsl(0, 0%, 100%);
+  border-color: hsl(220, 14%, 82%);
+  color: hsl(220, 20%, 14%);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.theme-light .hash {
+  background: rgba(59,130,246,0.1);
+}
+.theme-light .flow-node-in { fill: hsl(212, 96%, 56%, 0.14); }
+.theme-light .flow-node-out { fill: hsl(152, 69%, 42%, 0.14); }
+.theme-light .flow-node-fee { fill: hsl(38, 92%, 50%, 0.18); }
+.theme-light .story-card {
+  background: linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(34,197,94,0.06) 100%);
+}
+.theme-light .tx-flow-diagram {
+  background: linear-gradient(180deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.05) 100%);
+}
+.theme-light .warning-chip {
+  background: rgba(251,191,36,0.12);
+}
+.theme-light .badge-gray {
+  background: rgba(0,0,0,0.06);
+  border-color: hsl(220, 14%, 82%);
+}
+
+/* System preference auto-detect (no explicit class) */
+@media (prefers-color-scheme: light) {
+  :root:not(.theme-dark):not(.theme-light) {
+    --bg:           hsl(220, 20%, 97%);
+    --bg-pattern:   radial-gradient(ellipse 80% 50% at 50% -20%, hsl(220, 30%, 92%), transparent),
+                    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(250, 20%, 94%), transparent);
+    --surface:      hsl(0, 0%, 100%);
+    --surface2:     hsl(220, 16%, 95%);
+    --surface3:     hsl(220, 14%, 90%);
+    --border:       hsl(220, 14%, 82%);
+    --text:         hsl(220, 20%, 14%);
+    --text-soft:    hsl(220, 12%, 44%);
+    --text-dim:     hsl(220, 10%, 62%);
+    --shadow:       0 4px 24px rgba(0,0,0,0.08);
+    --shadow-lg:    0 12px 48px rgba(0,0,0,0.12);
+  }
+}
+
+/* ── Timelock calculator box ─────────────────────────────────────── */
+.timelock-box {
+  padding: 12px 16px;
+  background: rgba(251,191,36,0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(251,191,36,0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.timelock-calc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+.timelock-calc-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 60px;
+  font-size: 13px;
+}
+
+/* ── Fee context badge ────────────────────────────────────────────── */
+.fee-context-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+/* ── Animated flow paths ─────────────────────────────────────────── */
+.flow-path {
+  animation: flowPathIn 0.8s ease-out both;
+}
+@keyframes flowDash {
+  to { stroke-dashoffset: -40; }
+}
+.flow-path-animated {
+  stroke-dasharray: 12 8;
+  animation: flowDash 1.5s linear infinite, flowPathIn 0.8s ease-out both;
+}
+
+/* ── Collapsible keyboard focus ──────────────────────────────────── */
+.collapse-header:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.collapse-header[tabindex] {
+  outline: none;
+}
+.collapse-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── Print-friendly ─────────────────────────────────────────────── */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .card { box-shadow: none; border: 1px solid #ccc; }
+  .header { position: static; }
+  .btn { display: none; }
+}

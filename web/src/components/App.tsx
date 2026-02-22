@@ -1,10 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import '../styles/index.css';
 import { TransactionLoader } from './TransactionLoader';
 import { BlockVisualizer } from './BlockVisualizer';
 import { analyzeBlock } from '../utils/api';
 
 type Tab = 'tx' | 'block';
+type Theme = 'dark' | 'light' | 'system';
 
 /** Read a File and return its contents as a lowercase hex string. */
 async function fileToHex(file: File): Promise<string> {
@@ -15,6 +16,27 @@ async function fileToHex(file: File): Promise<string> {
 
 export default function App() {
     const [tab, setTab] = useState<Tab>('tx');
+
+    // Theme state
+    const [theme, setTheme] = useState<Theme>(() => {
+        const saved = localStorage.getItem('chain-lens-theme');
+        return (saved as Theme) || 'system';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('chain-lens-theme', theme);
+        const root = document.documentElement;
+        root.classList.remove('theme-dark', 'theme-light');
+        if (theme === 'dark') root.classList.add('theme-dark');
+        else if (theme === 'light') root.classList.add('theme-light');
+        // 'system' → no class, CSS handles via prefers-color-scheme
+    }, [theme]);
+
+    const cycleTheme = () => {
+        setTheme(prev => prev === 'dark' ? 'light' : prev === 'light' ? 'system' : 'dark');
+    };
+    const themeIcon = theme === 'dark' ? '🌙' : theme === 'light' ? '☀️' : '🖥️';
+    const themeLabel = theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'System';
 
     // Block mode state
     const [blkHex, setBlkHex] = useState('');
@@ -113,6 +135,14 @@ export default function App() {
                     </div>
                 </div>
                 <div style={{ flex: 1 }} />
+                <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: '6px 12px', minWidth: 80 }}
+                    onClick={cycleTheme}
+                    title={`Theme: ${themeLabel}`}
+                >
+                    {themeIcon} {themeLabel}
+                </button>
                 <div className="tabs" style={{ width: 280 }}>
                     <button className={`tab ${tab === 'tx' ? 'active' : ''}`} onClick={() => setTab('tx')}>
                         <span style={{ marginRight: 6 }}>◉</span> Transaction

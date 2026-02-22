@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
-import { formatSats, short, scriptTypeColor, WARNING_INFO } from '../utils/api';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  formatSats, short, scriptTypeColor, WARNING_INFO,
+  formatRelativeTimelock, classifyFeeRate, detectLikelyChangeOutput,
+  detectMultisig, downloadJson, copyJsonToClipboard, detectTxPattern,
+} from '../utils/api';
 import { TransactionFlowDiagram } from './TransactionFlowDiagram';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -173,6 +177,7 @@ function SegwitSavingsPanel({ s }: { s: SegwitSavings }) {
 function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechnical: boolean }) {
   const hasWitness = v.witness.length > 0;
   const rtl = v.relative_timelock;
+  const multisig = v.witness_script_asm ? detectMultisig(v.witness_script_asm) : null;
 
   return (
     <Collapsible
@@ -182,6 +187,7 @@ function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechni
           <span className={`badge ${scriptTypeColor(v.script_type)}`}>{v.script_type}</span>
           {hasWitness && <span className="badge badge-blue">segwit</span>}
           {rtl.enabled && <span className="badge badge-amber">timelock</span>}
+          {multisig && <span className="badge badge-purple">{multisig.m}-of-{multisig.n}</span>}
         </span>
       }
     >
@@ -204,12 +210,45 @@ function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechni
           </div>}
         </div>
 
-        {rtl.enabled && (
-          <div style={{
-            padding: '8px 12px', background: 'rgba(251,191,36,0.08)', borderRadius: 6,
-            border: '1px solid rgba(251,191,36,0.25)', fontSize: 13
-          }}>
-            ⏱ Relative timelock: <strong>{rtl.type === 'time' ? `${rtl.value}s (~${(rtl.value! / 60).toFixed(1)} min)` : `${rtl.value} blocks`}</strong>
+        {rtl.enabled && rtl.type && rtl.value != null && (
+          <div className="timelock-box">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18 }}>⏱</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  Relative Timelock: {formatRelativeTimelock(rtl.type, rtl.value)}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 2 }}>
+                  {rtl.type === 'blocks'
+                    ? `This input cannot be spent until ${rtl.value} blocks have been mined after the prevout was confirmed (~10 min per block).`
+                    : `This input cannot be spent until ${rtl.value} seconds have elapsed since the prevout was confirmed.`
+                  }
+                </div>
+              </div>
+            </div>
+            {rtl.type === 'blocks' && rtl.value > 0 && (
+              <div className="timelock-calc">
+                <div className="timelock-calc-row">
+                  <span className="kv-label">Blocks</span>
+                  <span style={{ fontWeight: 600 }}>{rtl.value}</span>
+                </div>
+                <span style={{ color: 'var(--text-dim)' }}>→</span>
+                <div className="timelock-calc-row">
+                  <span className="kv-label">≈ Minutes</span>
+                  <span style={{ fontWeight: 600 }}>{rtl.value * 10}</span>
+                </div>
+                <span style={{ color: 'var(--text-dim)' }}>→</span>
+                <div className="timelock-calc-row">
+                  <span className="kv-label">≈ Hours</span>
+                  <span style={{ fontWeight: 600 }}>{(rtl.value * 10 / 60).toFixed(1)}</span>
+                </div>
+                <span style={{ color: 'var(--text-dim)' }}>→</span>
+                <div className="timelock-calc-row">
+                  <span className="kv-label">≈ Days</span>
+                  <span style={{ fontWeight: 600 }}>{(rtl.value * 10 / 1440).toFixed(1)}</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -237,7 +276,10 @@ function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechni
             </div>
             {v.witness_script_asm && (
               <div style={{ marginTop: 10 }}>
-                <div className="stat-label" style={{ marginBottom: 4 }}>Witness Script</div>
+                <div className="stat-label" style={{ marginBottom: 4 }}>
+                  Witness Script
+                  {multisig && <span className="badge badge-purple" style={{ marginLeft: 8, fontSize: 10, padding: '1px 8px' }}>{multisig.m}-of-{multisig.n} multisig</span>}
+                </div>
                 <ScriptAsm asm={v.witness_script_asm} />
               </div>
             )}
@@ -254,7 +296,7 @@ function InputPanel({ v, idx, showTechnical }: { v: Vin; idx: number; showTechni
 }
 
 // ─── Output Panel ─────────────────────────────────────────────────────────────
-function OutputPanel({ v, showTechnical }: { v: Vout; showTechnical: boolean }) {
+function OutputPanel({ v, showTechnical, isLikelyChange }: { v: Vout; showTechnical: boolean; isLikelyChange: boolean }) {
   const isDust = v.script_type !== 'op_return' && v.value_sats < 546;
 
   return (
@@ -264,6 +306,11 @@ function OutputPanel({ v, showTechnical }: { v: Vout; showTechnical: boolean }) 
         <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           <span className={`badge ${scriptTypeColor(v.script_type)}`}>{v.script_type}</span>
           {isDust && <span className="badge badge-red">dust</span>}
+          {isLikelyChange && (
+            <Tooltip tip="Heuristic guess: this output likely returns change to the sender (smallest output matching an input script type).">
+              <span className="badge badge-gray" style={{ cursor: 'help' }}>🔄 likely change</span>
+            </Tooltip>
+          )}
           {v.script_type !== 'op_return' && (
             <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--green)' }}>
               {formatSats(v.value_sats)}
@@ -390,18 +437,56 @@ function StoryNarrative({ data }: { data: TxData }) {
 // ─── Main Visualizer ──────────────────────────────────────────────────────────
 export function TransactionVisualizer({ data }: { data: TxData }) {
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
   const efficiency = data.total_input_sats > 0
     ? ((data.total_output_sats / data.total_input_sats) * 100).toFixed(1)
     : '?';
 
+  const feeCtx = useMemo(() => classifyFeeRate(data.fee_rate_sat_vb), [data.fee_rate_sat_vb]);
+  const changeIdx = useMemo(() => detectLikelyChangeOutput(data.vin, data.vout), [data.vin, data.vout]);
+  const txPattern = useMemo(() => detectTxPattern(data.vin, data.vout), [data.vin, data.vout]);
+
+  // Keyboard navigation: Tab/Arrow through collapsibles
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const headers = Array.from(el.querySelectorAll<HTMLElement>('.collapse-header'));
+        const idx = headers.indexOf(document.activeElement as HTMLElement);
+        if (idx < 0) return;
+        e.preventDefault();
+        const next = e.key === 'ArrowDown' ? Math.min(idx + 1, headers.length - 1) : Math.max(idx - 1, 0);
+        headers[next].focus();
+      }
+    };
+    el.addEventListener('keydown', handler);
+    return () => el.removeEventListener('keydown', handler);
+  }, []);
+
+  const handleCopyJson = async () => {
+    const ok = await copyJsonToClipboard(data);
+    if (ok) { setJsonCopied(true); setTimeout(() => setJsonCopied(false), 2000); }
+  };
+
   return (
-    <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div ref={containerRef} className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* ── Story Narrative ── */}
       <StoryNarrative data={data} />
 
-      {/* ── Show Technical Details Toggle ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {/* ── Toolbar: technical toggle + export ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={handleCopyJson}>
+            {jsonCopied ? '✓ Copied!' : '📋 Copy JSON'}
+          </button>
+          <button className="btn btn-ghost" style={{ fontSize: 12 }}
+            onClick={() => downloadJson(data, `${data.txid.slice(0, 16)}.json`)}>
+            💾 Download JSON
+          </button>
+        </div>
         <button
           className="btn btn-ghost"
           style={{ fontSize: 12 }}
@@ -410,6 +495,17 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
           {showTechnicalDetails ? '🙈 Hide' : '🔬 Show'} technical details (hex, scripts)
         </button>
       </div>
+
+      {/* ── Pattern label ── */}
+      {txPattern && (
+        <div className="card card-sm" style={{ display: 'flex', alignItems: 'center', gap: 12, borderColor: 'rgba(139,92,246,0.25)' }}>
+          <span style={{ fontSize: 22 }}>{txPattern.icon}</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{txPattern.label}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>{txPattern.desc}</div>
+          </div>
+        </div>
+      )}
 
       {/* ── Header Row ── */}
       <div className="card" style={{
@@ -454,28 +550,34 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
             </span>
           </div>
           <div className="kv">
-            <Tooltip tip="Satoshis per virtual byte">
+            <Tooltip tip="Satoshis per virtual byte — the cost density of this transaction">
               <span className="kv-label">Fee Rate</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.fee_rate_sat_vb.toFixed(2)}</span>
             <span className="stat-sub">sat/vB</span>
+            {/* Fee context badge */}
+            <Tooltip tip={feeCtx.desc}>
+              <span className="fee-context-badge" style={{ color: feeCtx.color, borderColor: feeCtx.color, cursor: 'help' }}>
+                {feeCtx.icon} {feeCtx.label}
+              </span>
+            </Tooltip>
           </div>
           <div className="kv">
-            <Tooltip tip="Virtual weight (weight / 4)">
+            <Tooltip tip="Virtual weight (weight / 4) — the effective size used for fee calculation">
               <span className="kv-label">Virtual Size</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.vbytes.toFixed(2)}</span>
             <span className="stat-sub">vBytes</span>
           </div>
           <div className="kv">
-            <Tooltip tip="BIP141 weight units">
+            <Tooltip tip="BIP141 weight units — SegWit transactions weigh less because witness data is discounted">
               <span className="kv-label">Weight</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.weight.toLocaleString()}</span>
             <span className="stat-sub">WU</span>
           </div>
           <div className="kv">
-            <Tooltip tip="Raw serialized byte size">
+            <Tooltip tip="Raw serialized byte size including all data">
               <span className="kv-label">Size</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 18 }}>{data.size_bytes.toLocaleString()}</span>
@@ -488,7 +590,7 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
             <span className="stat-value" style={{ fontSize: 18, color: 'var(--green)' }}>{efficiency}%</span>
           </div>
           <div className="kv">
-            <Tooltip tip={data.locktime_type === 'unix_timestamp' ? `Unix timestamp: ${data.locktime_value}` : `Block height: ${data.locktime_value}`}>
+            <Tooltip tip={data.locktime_type === 'unix_timestamp' ? `Unix timestamp: ${data.locktime_value}` : data.locktime_type === 'block_height' ? `Block height: ${data.locktime_value}` : 'No locktime set'}>
               <span className="kv-label">Locktime</span>
             </Tooltip>
             <span className="stat-value" style={{ fontSize: 15 }}>
@@ -553,7 +655,7 @@ export function TransactionVisualizer({ data }: { data: TxData }) {
           </div>
         </div>
         <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {data.vout.map((v, i) => <OutputPanel key={i} v={v} showTechnical={showTechnicalDetails} />)}
+          {data.vout.map((v, i) => <OutputPanel key={i} v={v} showTechnical={showTechnicalDetails} isLikelyChange={v.n === changeIdx} />)}
         </div>
       </div>
 

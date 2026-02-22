@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { analyzeTransaction, analyzeFixture, short } from '../utils/api';
+import { analyzeTransaction, analyzeFixture, short, downloadJson, copyJsonToClipboard } from '../utils/api';
 import { TransactionVisualizer } from './TransactionVisualizer';
 
 const EXAMPLES = [
@@ -17,14 +17,17 @@ export function TransactionLoader() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [noPrevoutHint, setNoPrevoutHint] = useState(false);
 
   const analyze = async () => {
     setError('');
     setResult(null);
+    setNoPrevoutHint(false);
     setLoading(true);
     try {
       if (inputMode === 'fixture') {
         const fixture = JSON.parse(fixtureJson.trim());
+        if (!fixture.prevouts || fixture.prevouts.length === 0) setNoPrevoutHint(true);
         const data = await analyzeFixture(fixture);
         setResult(data);
       } else {
@@ -232,6 +235,11 @@ export function TransactionLoader() {
             border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: 'var(--red)'
           }}>
             ✗ {error}
+            {noPrevoutHint && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+                💡 No prevouts were provided. Add prevout data to see fee calculations, input addresses, and value flow.
+              </div>
+            )}
           </div>
         )}
         {result && !result.ok && (
@@ -240,6 +248,11 @@ export function TransactionLoader() {
             border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: 'var(--red)'
           }}>
             ✗ {result.error?.message || JSON.stringify(result.error)}
+            {noPrevoutHint && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+                💡 No prevouts were provided. Add prevout data to see fee calculations, input addresses, and value flow.
+              </div>
+            )}
           </div>
         )}
       </div>

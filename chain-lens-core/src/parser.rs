@@ -80,7 +80,7 @@ pub struct ParsedTransaction {
     pub locktime: u32,
     pub size_bytes: u64,
     pub weight: u64,
-    pub vbytes: f64,
+    pub vbytes: u64,
     pub total_input_sats: u64,
     pub total_output_sats: u64,
     pub fee_sats: i64,
@@ -329,7 +329,7 @@ pub fn parse_transaction_inner(
     } else {
         size_bytes * 4
     };
-    let vbytes = ((weight as f64) / 4.0).ceil();
+    let vbytes = (weight + 3) / 4;
 
     // ── Build prevout lookup: (txid, vout) → Prevout ──
     use std::collections::HashMap;
@@ -491,8 +491,8 @@ pub fn parse_transaction_inner(
 
     // ── Fee calculation ──
     let fee_sats = total_input_sats as i64 - total_output_sats as i64;
-    let fee_rate_sat_vb = if vbytes > 0.0 && fee_sats >= 0 {
-        (fee_sats as f64 / vbytes * 100.0).round() / 100.0
+    let fee_rate_sat_vb = if vbytes > 0 && fee_sats >= 0 {
+        (fee_sats as f64 / vbytes as f64 * 100.0).round() / 100.0
     } else {
         0.0
     };

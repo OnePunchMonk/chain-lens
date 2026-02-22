@@ -111,16 +111,17 @@ fn read_n(data: &[u8], offset: &mut usize, n: usize) -> Result<Vec<u8>, ChainLen
     Ok(bytes)
 }
 
-/// CTxInUndo order (Bitcoin Core): varint(height), [varint(version) if height>0], CompressedScript, CompressedAmount.
+/// CTxInUndo order (Bitcoin Core undo.h): varint(height), [varint(version) if height>0],
+/// then TxOutCompression = AmountCompression + ScriptCompression (AMOUNT before SCRIPT).
 fn read_one_txin_undo(data: &[u8], offset: &mut usize) -> Result<UndoPrevout, ChainLensError> {
     let height_encoded = read_varint(data, offset)?;
     let height = height_encoded / 2;
     if height > 0 {
         let _version = read_varint(data, offset)?;
     }
-    let script_pubkey = parse_undo_script(data, offset)?;
     let compressed_value = read_varint(data, offset)?;
     let value_sats = decompress_amount(compressed_value);
+    let script_pubkey = parse_undo_script(data, offset)?;
     Ok(UndoPrevout { value_sats, script_pubkey })
 }
 
