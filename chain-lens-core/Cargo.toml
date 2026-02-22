@@ -1,0 +1,18 @@
+[package]
+name = "chain-lens-core"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "chain-lens-core"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+bech32 = { workspace = true }
+bs58 = { workspace = true }
+anyhow = { workspace = true }

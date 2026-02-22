@@ -1,3 +1,9 @@
+target/
+node_modules/
+dist/
+.DS_Store
+*.log
+
 out/
 fixtures/blocks/blk*.dat
 fixtures/blocks/rev*.dat

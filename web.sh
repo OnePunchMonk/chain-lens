@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PORT="${PORT:-3000}"
+
+cargo run -q -p chain-lens-server
+
+#!/usr/bin/env bash
+set -euo pipefail
+
 ###############################################################################
 # web.sh — Bitcoin transaction web visualizer
 #

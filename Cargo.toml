@@ -1,0 +1,18 @@
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+hex = "0.4"
+sha2 = "0.10"
+bech32 = "0.9"
+bs58 = "0.5"
+anyhow = "1.0"
+tokio = { version = "1.36", features = ["macros", "rt-multi-thread"] }
+axum = { version = "0.7", features = ["json", "multipart"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+[workspace]
+members = [
+    "chain-lens-core",
+    "chain-lens-server",
+]

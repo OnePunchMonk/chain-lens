@@ -1,3 +1,40 @@
+# Chain Lens
+
+Minimal implementation of the Chain Lens Week 1 challenge.
+
+## Prerequisites
+
+- Rust (stable toolchain)
+- Node.js (for the web UI, once implemented)
+
+## CLI Usage
+
+```bash
+./cli.sh fixtures/tx-example.json
+```
+
+The CLI expects a JSON fixture with at least:
+
+```json
+{
+  "raw_tx": "0200000001...",
+  "prevouts": []
+}
+```
+
+Output is printed as JSON to stdout.
+
+## Web API
+
+```bash
+./web.sh
+```
+
+This starts a server (Axum) that exposes:
+
+- `GET /api/health` → `{ "ok": true }`
+- `POST /api/analyze` with a JSON body like the CLI fixture → parsed transaction JSON
+
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/BdrW_bK5)
 # Week 1 Challenge: Chain Lens
 

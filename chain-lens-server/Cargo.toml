@@ -1,0 +1,13 @@
+[package]
+name = "chain-lens-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chain-lens-core = { path = "../chain-lens-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
