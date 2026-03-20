@@ -1,9 +1,6 @@
 # Chain Lens
 
 A Bitcoin transaction and block analyzer with a Rust-powered CLI and a rich React web visualizer. Chain Lens parses raw Bitcoin data, classifies scripts and addresses, computes fees, and presents everything with interactive diagrams and plain-English explanations — designed so even non-technical users can understand what a transaction does.
-
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/BdrW_bK5)
-
 ---
 
 ## Table of Contents
